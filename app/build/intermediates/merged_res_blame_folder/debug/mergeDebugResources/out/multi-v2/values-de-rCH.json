@@ -1,0 +1,26 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.example.meshvisualiser.app-mergeDebugResources-70:/values-de-rCH/values-de-rCH.xml",
+            "map": [
+                {
+                    "source": "/Users/cantabile/.gradle/caches/8.9/transforms/4023d3d2e57fdc53dd1ae1b14bb93f29/transformed/core-1.52.0/res/values-de-rCH/values.xml",
+                    "from": {
+                        "startLines": "4,5,6,7,8",
+                        "startColumns": "0,0,0,0,0",
+                        "startOffsets": "203,253,302,436,573",
+                        "endColumns": "49,48,133,136,90",
+                        "endOffsets": "252,301,435,572,663"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6",
+                        "startColumns": "4,4,4,4,4",
+                        "startOffsets": "55,109,162,300,441",
+                        "endColumns": "53,52,137,140,94",
+                        "endOffsets": "104,157,295,436,531"
+                    }
+                }
+            ]
+        }
+    ]
+}

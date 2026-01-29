@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.example.meshvisualiser.app-mergeDebugResources-70:/values-watch-v21/values-watch-v21.xml",
+            "map": [
+                {
+                    "source": "/Users/cantabile/.gradle/caches/8.9/transforms/0a260b5c7c5e2e422d75121fef6f9e7c/transformed/appcompat-1.7.0/res/values-watch-v21/values-watch-v21.xml",
+                    "from": {
+                        "startLines": "2,6,10",
+                        "startColumns": "4,4,4",
+                        "startOffsets": "55,271,499",
+                        "endLines": "5,9,13",
+                        "endColumns": "12,12,12",
+                        "endOffsets": "266,494,724"
+                    }
+                }
+            ]
+        }
+    ]
+}

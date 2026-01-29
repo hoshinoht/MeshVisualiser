@@ -1,0 +1,26 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.example.meshvisualiser.app-mergeDebugResources-70:/values-he/values-he.xml",
+            "map": [
+                {
+                    "source": "/Users/cantabile/.gradle/caches/8.9/transforms/4023d3d2e57fdc53dd1ae1b14bb93f29/transformed/core-1.52.0/res/values-he/values.xml",
+                    "from": {
+                        "startLines": "4,5,6,7,8",
+                        "startColumns": "0,0,0,0,0",
+                        "startOffsets": "199,245,292,412,533",
+                        "endColumns": "45,46,119,120,93",
+                        "endOffsets": "244,291,411,532,626"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6",
+                        "startColumns": "4,4,4,4,4",
+                        "startOffsets": "55,105,156,280,405",
+                        "endColumns": "49,50,123,124,97",
+                        "endOffsets": "100,151,275,400,498"
+                    }
+                }
+            ]
+        }
+    ]
+}
