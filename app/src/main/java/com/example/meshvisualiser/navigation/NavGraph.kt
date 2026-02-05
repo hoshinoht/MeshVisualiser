@@ -10,6 +10,7 @@ import com.example.meshvisualiser.ui.MainScreen
 import com.example.meshvisualiser.ui.MainViewModel
 import com.example.meshvisualiser.ui.screens.ConnectionScreen
 import com.example.meshvisualiser.ui.screens.OnboardingScreen
+import com.example.meshvisualiser.ui.screens.QuizScreen
 
 @Composable
 fun MeshNavHost(
@@ -24,6 +25,9 @@ fun MeshNavHost(
     val lastGroupCode by viewModel.lastGroupCode.collectAsStateWithLifecycle()
     val groupCodeError by viewModel.groupCodeError.collectAsStateWithLifecycle()
     val meshState by viewModel.meshState.collectAsStateWithLifecycle()
+    val nearbyIsDiscovering by viewModel.nearbyIsDiscovering.collectAsStateWithLifecycle()
+    val nearbyIsAdvertising by viewModel.nearbyIsAdvertising.collectAsStateWithLifecycle()
+    val nearbyError by viewModel.nearbyError.collectAsStateWithLifecycle()
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.ONBOARDING) {
@@ -52,12 +56,31 @@ fun MeshNavHost(
                         popUpTo(Routes.CONNECTION) { inclusive = true }
                     }
                 },
-                groupCodeError = groupCodeError
+                groupCodeError = groupCodeError,
+                isDiscovering = nearbyIsDiscovering,
+                isAdvertising = nearbyIsAdvertising,
+                nearbyError = nearbyError
             )
         }
 
         composable(Routes.MESH) {
-            MainScreen(viewModel = viewModel)
+            MainScreen(
+                viewModel = viewModel,
+                onNavigateToQuiz = { navController.navigate(Routes.QUIZ) }
+            )
+        }
+
+        composable(Routes.QUIZ) {
+            val quizState by viewModel.quizState.collectAsStateWithLifecycle()
+            QuizScreen(
+                quizState = quizState,
+                onAnswer = { viewModel.answerQuiz(it) },
+                onNext = { viewModel.nextQuestion() },
+                onClose = {
+                    viewModel.closeQuiz()
+                    navController.popBackStack()
+                }
+            )
         }
     }
 }

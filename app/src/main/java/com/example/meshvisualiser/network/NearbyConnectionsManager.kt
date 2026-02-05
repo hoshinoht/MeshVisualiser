@@ -1,6 +1,9 @@
 package com.example.meshvisualiser.network
 
+import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.location.LocationManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
 import com.example.meshvisualiser.MeshVisualizerApp
@@ -30,6 +33,10 @@ class NearbyConnectionsManager(
 
   private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(context)
 
+  // Track endpoints in pending/active connection state to prevent duplicate requests
+  private val pendingEndpoints = mutableSetOf<String>()
+  private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
   private val _peers = MutableStateFlow<Map<String, PeerInfo>>(emptyMap())
   val peers: StateFlow<Map<String, PeerInfo>> = _peers.asStateFlow()
 
@@ -39,20 +46,56 @@ class NearbyConnectionsManager(
   private val _isAdvertising = MutableStateFlow(false)
   val isAdvertising: StateFlow<Boolean> = _isAdvertising.asStateFlow()
 
+  private val _lastError = MutableStateFlow<String?>(null)
+  val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+  /** Check hardware prerequisites for Nearby Connections. Returns list of issues, empty if all OK. */
+  fun checkHardwareState(): List<String> {
+    val issues = mutableListOf<String>()
+
+    // Location Services
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    if (locationManager != null) {
+      val gpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+      val networkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+      if (!gpsEnabled && !networkEnabled) {
+        issues.add("Location Services are OFF — required for peer discovery")
+      }
+    }
+
+    // Bluetooth
+    val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+    val btAdapter = btManager?.adapter
+    if (btAdapter == null || !btAdapter.isEnabled) {
+      issues.add("Bluetooth is OFF — required for peer discovery")
+    }
+
+    // WiFi
+    val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    if (wifiManager != null && !wifiManager.isWifiEnabled) {
+      issues.add("WiFi is OFF — recommended for faster discovery")
+    }
+
+    return issues
+  }
+
   private val connectionLifecycleCallback =
           object : ConnectionLifecycleCallback() {
             override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
               Log.d(TAG, "Connection initiated with $endpointId (${info.endpointName})")
+              pendingEndpoints.add(endpointId)
               // Auto-accept all connections for mesh formation
               connectionsClient
                       .acceptConnection(endpointId, payloadCallback)
                       .addOnSuccessListener { Log.d(TAG, "Accepted connection from $endpointId") }
                       .addOnFailureListener { e ->
                         Log.e(TAG, "Failed to accept connection from $endpointId", e)
+                        pendingEndpoints.remove(endpointId)
                       }
             }
 
             override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
+              pendingEndpoints.remove(endpointId)
               when (result.status.statusCode) {
                 ConnectionsStatusCodes.STATUS_OK -> {
                   Log.d(TAG, "Connected to $endpointId")
@@ -68,14 +111,21 @@ class NearbyConnectionsManager(
                   Log.d(TAG, "Connection rejected by $endpointId")
                 }
                 ConnectionsStatusCodes.STATUS_ERROR -> {
-                  Log.e(TAG, "Connection error with $endpointId")
+                  Log.e(TAG, "Connection error with $endpointId, status: ${result.status.statusMessage}")
                 }
               }
             }
 
             override fun onDisconnected(endpointId: String) {
               Log.d(TAG, "Disconnected from $endpointId")
+              pendingEndpoints.remove(endpointId)
               _peers.update { it - endpointId }
+
+              // Auto-reconnect: if still discovering, the endpoint will be re-found.
+              // If not discovering, restart discovery to allow reconnection.
+              if (_isDiscovering.value || _isAdvertising.value) {
+                Log.d(TAG, "Still active, will reconnect to $endpointId on re-discovery")
+              }
             }
           }
 
@@ -85,7 +135,9 @@ class NearbyConnectionsManager(
               if (payload.type == Payload.Type.BYTES) {
                 payload.asBytes()?.let { bytes ->
                   MeshMessage.fromBytes(bytes)?.let { message ->
-                    Log.d(TAG, "Received message from $endpointId: ${message.getMessageType()}")
+                    if (message.getMessageType() != MessageType.POSE_UPDATE) {
+                      Log.d(TAG, "Received ${message.getMessageType()} from $endpointId")
+                    }
                     handleMessage(endpointId, message)
                   }
                 }
@@ -105,30 +157,59 @@ class NearbyConnectionsManager(
             override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
               Log.d(TAG, "Endpoint found: $endpointId (${info.endpointName})")
 
-              // Both devices discover each other simultaneously. To avoid duplicate
-              // connections, only the device with the higher localId initiates.
-              val remoteId = info.endpointName.toLongOrNull()
-              if (remoteId != null && localId < remoteId) {
-                Log.d(TAG, "Skipping connection request — remote $remoteId will initiate")
+              // Skip if already connected or connection in progress
+              if (_peers.value.containsKey(endpointId)) {
+                Log.d(TAG, "Already connected to $endpointId, skipping")
+                return
+              }
+              if (pendingEndpoints.contains(endpointId)) {
+                Log.d(TAG, "Connection already pending for $endpointId, skipping")
                 return
               }
 
-              connectionsClient
-                      .requestConnection(
-                              localId.toString(),
-                              endpointId,
-                              connectionLifecycleCallback
-                      )
-                      .addOnSuccessListener { Log.d(TAG, "Requested connection to $endpointId") }
-                      .addOnFailureListener { e ->
-                        Log.e(TAG, "Failed to request connection to $endpointId", e)
-                      }
+              // Only the lower-ID device initiates the connection to prevent
+              // simultaneous requestConnection() calls that cause nonce collisions
+              // and UKEY2 EOFExceptions on both sides.
+              // The higher-ID device will receive onConnectionInitiated() from the
+              // lower-ID device's request. As a fallback, if nothing comes through
+              // after 5s, the higher-ID device initiates anyway.
+              val remoteId = info.endpointName.toLongOrNull()
+              val shouldDefer = remoteId != null && localId > remoteId
+
+              if (shouldDefer) {
+                Log.d(TAG, "Deferring connection to $endpointId (we have higher ID, waiting for their request)")
+                // Fallback: if not connected after 5s, initiate ourselves
+                reconnectHandler.postDelayed({
+                  if (!_peers.value.containsKey(endpointId) && !pendingEndpoints.contains(endpointId)) {
+                    Log.d(TAG, "Fallback: initiating connection to $endpointId after timeout")
+                    requestConnectionTo(endpointId)
+                  }
+                }, 5000L)
+                return
+              }
+
+              requestConnectionTo(endpointId)
             }
 
             override fun onEndpointLost(endpointId: String) {
               Log.d(TAG, "Endpoint lost: $endpointId")
             }
           }
+
+  private fun requestConnectionTo(endpointId: String) {
+    pendingEndpoints.add(endpointId)
+    connectionsClient
+            .requestConnection(
+                    localId.toString(),
+                    endpointId,
+                    connectionLifecycleCallback
+            )
+            .addOnSuccessListener { Log.d(TAG, "Requested connection to $endpointId") }
+            .addOnFailureListener { e ->
+              Log.e(TAG, "Failed to request connection to $endpointId", e)
+              pendingEndpoints.remove(endpointId)
+            }
+  }
 
   private fun handleMessage(endpointId: String, message: MeshMessage) {
     when (message.getMessageType()) {
@@ -144,23 +225,23 @@ class NearbyConnectionsManager(
           return
         }
 
-        // Update peer's ID from handshake (create PeerInfo if it doesn't exist yet due to race)
+        // Update peer's ID from handshake — use copy() so StateFlow detects the change
         _peers.update { currentPeers ->
           val peer = currentPeers[endpointId] ?: PeerInfo(endpointId = endpointId)
-          peer.peerId = message.senderId
+          val updated = peer.copy(peerId = message.senderId)
           Log.d(TAG, "Handshake received from $endpointId, peerId: ${message.senderId}")
-          currentPeers + (endpointId to peer)
+          currentPeers + (endpointId to updated)
         }
         // Forward handshake to MeshManager so leader can re-send COORDINATOR to late joiners
         onMessageReceived(endpointId, message)
       }
       MessageType.DEVICE_INFO -> {
-        // Update peer's device model
+        // Update peer's device model — use copy() so StateFlow detects the change
         _peers.update { currentPeers ->
           val peer = currentPeers[endpointId] ?: PeerInfo(endpointId = endpointId)
-          peer.deviceModel = message.data
+          val updated = peer.copy(deviceModel = message.data)
           Log.d(TAG, "Device info from $endpointId: ${message.data}")
-          currentPeers + (endpointId to peer)
+          currentPeers + (endpointId to updated)
         }
       }
       else -> {
@@ -172,12 +253,23 @@ class NearbyConnectionsManager(
 
   /** Start discovering and advertising simultaneously for mesh formation. */
   fun startDiscoveryAndAdvertising() {
+    _lastError.value = null
+    Log.d(TAG, "Starting discovery+advertising with serviceId: $serviceId")
+
+    // Check hardware prerequisites first
+    val issues = checkHardwareState()
+    if (issues.isNotEmpty()) {
+      val msg = issues.joinToString("; ")
+      Log.w(TAG, "Hardware issues detected: $msg")
+      _lastError.value = msg
+    }
+
     startAdvertising()
     startDiscovery()
   }
 
   private fun startAdvertising() {
-    val advertisingOptions = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
+    val advertisingOptions = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
 
     connectionsClient
             .startAdvertising(
@@ -187,17 +279,21 @@ class NearbyConnectionsManager(
                     advertisingOptions
             )
             .addOnSuccessListener {
-              Log.d(TAG, "Advertising started")
+              Log.d(TAG, "Advertising started successfully for serviceId: $serviceId")
               _isAdvertising.value = true
             }
             .addOnFailureListener { e ->
               Log.e(TAG, "Failed to start advertising", e)
               _isAdvertising.value = false
+              _lastError.update { existing ->
+                val msg = "Advertising failed: ${e.message}"
+                if (existing != null) "$existing; $msg" else msg
+              }
             }
   }
 
   private fun startDiscovery() {
-    val discoveryOptions = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
+    val discoveryOptions = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
 
     connectionsClient
             .startDiscovery(
@@ -206,12 +302,16 @@ class NearbyConnectionsManager(
                     discoveryOptions
             )
             .addOnSuccessListener {
-              Log.d(TAG, "Discovery started")
+              Log.d(TAG, "Discovery started successfully for serviceId: $serviceId")
               _isDiscovering.value = true
             }
             .addOnFailureListener { e ->
               Log.e(TAG, "Failed to start discovery", e)
               _isDiscovering.value = false
+              _lastError.update { existing ->
+                val msg = "Discovery failed: ${e.message}"
+                if (existing != null) "$existing; $msg" else msg
+              }
             }
   }
 
@@ -233,17 +333,19 @@ class NearbyConnectionsManager(
   /** Send a message to a specific endpoint. */
   fun sendMessage(endpointId: String, message: MeshMessage) {
     val payload = Payload.fromBytes(message.toBytes())
+    val type = message.getMessageType()
     connectionsClient
             .sendPayload(endpointId, payload)
-            .addOnSuccessListener { Log.d(TAG, "Sent ${message.getMessageType()} to $endpointId") }
-            .addOnFailureListener { e -> Log.e(TAG, "Failed to send message to $endpointId", e) }
+            .addOnSuccessListener {
+              if (type != MessageType.POSE_UPDATE) Log.d(TAG, "Sent $type to $endpointId")
+            }
+            .addOnFailureListener { e -> Log.e(TAG, "Failed to send $type to $endpointId", e) }
   }
 
   /** Broadcast a message to all connected peers. */
   fun broadcastMessage(message: MeshMessage) {
     val payload = Payload.fromBytes(message.toBytes())
     _peers.value.keys.forEach { endpointId -> connectionsClient.sendPayload(endpointId, payload) }
-    Log.d(TAG, "Broadcast ${message.getMessageType()} to ${_peers.value.size} peers")
   }
 
   /** Get peers with valid peer IDs (handshake completed). */
@@ -256,5 +358,7 @@ class NearbyConnectionsManager(
     stopDiscovery()
     disconnectAll()
     connectionsClient.stopAllEndpoints()
+    pendingEndpoints.clear()
+    reconnectHandler.removeCallbacksAndMessages(null)
   }
 }

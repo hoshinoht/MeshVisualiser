@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -59,17 +60,24 @@ fun CsmacdOverlay(
                 // State indicator dot
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
+                        .size(16.dp)
                         .clip(CircleShape)
                         .background(stateColor)
                 )
 
-                Text(
-                    text = csmaState.currentState.name,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = stateColor,
-                    fontWeight = FontWeight.Bold
-                )
+                // State name as filled badge
+                Surface(
+                    color = stateColor.copy(alpha = 0.2f),
+                    shape = MaterialTheme.shapes.extraSmall
+                ) {
+                    Text(
+                        text = csmaState.currentState.name,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = stateColor,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))

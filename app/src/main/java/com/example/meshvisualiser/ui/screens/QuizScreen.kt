@@ -1,21 +1,20 @@
-package com.example.meshvisualiser.ui.components
+package com.example.meshvisualiser.ui.screens
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -23,37 +22,44 @@ import com.example.meshvisualiser.quiz.QuizState
 import com.example.meshvisualiser.ui.theme.LogAck
 import com.example.meshvisualiser.ui.theme.LogError
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuizOverlay(
+fun QuizScreen(
     quizState: QuizState,
     onAnswer: (Int) -> Unit,
     onNext: () -> Unit,
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    onClose: () -> Unit
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.7f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = {}  // Consume all touches on the scrim
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        GlassSurface(
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Mesh Quiz") },
+                navigationIcon = {
+                    IconButton(onClick = onClose) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Close quiz"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        Box(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .padding(16.dp),
-            shape = MaterialTheme.shapes.large
+                .fillMaxSize()
+                .padding(padding),
+            contentAlignment = Alignment.Center
         ) {
             if (quizState.isFinished) {
-                // Final score screen
-                FinalScoreScreen(quizState, onClose)
+                FinalScoreContent(quizState, onClose)
             } else {
                 quizState.currentQuestion?.let { question ->
-                    QuestionScreen(
+                    QuestionContent(
                         questionIndex = quizState.currentIndex,
                         totalQuestions = quizState.questions.size,
                         questionText = question.text,
@@ -64,8 +70,7 @@ fun QuizOverlay(
                         score = quizState.score,
                         timerSeconds = quizState.timerSecondsRemaining,
                         onAnswer = onAnswer,
-                        onNext = onNext,
-                        onClose = onClose
+                        onNext = onNext
                     )
                 }
             }
@@ -74,7 +79,7 @@ fun QuizOverlay(
 }
 
 @Composable
-private fun QuestionScreen(
+private fun QuestionContent(
     questionIndex: Int,
     totalQuestions: Int,
     questionText: String,
@@ -85,10 +90,14 @@ private fun QuestionScreen(
     score: Int,
     timerSeconds: Int,
     onAnswer: (Int) -> Unit,
-    onNext: () -> Unit,
-    onClose: () -> Unit
+    onNext: () -> Unit
 ) {
-    Column(modifier = Modifier.padding(20.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+    ) {
         // Header: progress + score + timer
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -107,7 +116,7 @@ private fun QuestionScreen(
             )
             // Timer
             Box(
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(
@@ -118,7 +127,7 @@ private fun QuestionScreen(
                 )
                 Text(
                     text = "$timerSeconds",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -129,23 +138,23 @@ private fun QuestionScreen(
             progress = { (questionIndex + 1).toFloat() / totalQuestions },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp)
+                .padding(vertical = 12.dp)
                 .height(4.dp),
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Question
         Text(
             text = questionText,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         // Options
         options.forEachIndexed { index, option ->
@@ -182,37 +191,39 @@ private fun QuestionScreen(
                 onClick = { if (!isRevealed) onAnswer(index) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 3.dp)
+                    .padding(vertical = 4.dp)
                     .scale(scale),
-                shape = MaterialTheme.shapes.small,
+                shape = MaterialTheme.shapes.medium,
                 color = buttonColor
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "${'A' + index}.",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.width(28.dp)
+                        modifier = Modifier.width(32.dp)
                     )
                     Text(
                         text = option,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Next / Close button
+        // Next button
         if (isRevealed) {
             Button(
                 onClick = onNext,
-                modifier = Modifier.align(Alignment.End)
+                modifier = Modifier.align(Alignment.End),
+                shape = MaterialTheme.shapes.medium,
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
             ) {
                 Text(if (questionIndex + 1 >= totalQuestions) "See Results" else "Next")
             }
@@ -221,9 +232,11 @@ private fun QuestionScreen(
 }
 
 @Composable
-private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit) {
+private fun FinalScoreContent(quizState: QuizState, onClose: () -> Unit) {
     Column(
-        modifier = Modifier.padding(24.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -232,7 +245,7 @@ private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurface
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         val percentage = if (quizState.questions.isNotEmpty())
             (quizState.score * 100) / quizState.questions.size else 0
@@ -250,7 +263,7 @@ private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         val feedback = when {
             percentage >= 90 -> "Excellent! You really know your networking!"
@@ -266,10 +279,14 @@ private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit) {
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        Button(onClick = onClose) {
-            Text("Close")
+        Button(
+            onClick = onClose,
+            shape = MaterialTheme.shapes.medium,
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+        ) {
+            Text("Back to Mesh")
         }
     }
 }

@@ -101,6 +101,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _connectionState = MutableStateFlow(ConnectionFlowState.IDLE)
     val connectionState: StateFlow<ConnectionFlowState> = _connectionState.asStateFlow()
 
+    // Discovery diagnostics
+    private val _nearbyIsDiscovering = MutableStateFlow(false)
+    val nearbyIsDiscovering: StateFlow<Boolean> = _nearbyIsDiscovering.asStateFlow()
+
+    private val _nearbyIsAdvertising = MutableStateFlow(false)
+    val nearbyIsAdvertising: StateFlow<Boolean> = _nearbyIsAdvertising.asStateFlow()
+
+    private val _nearbyError = MutableStateFlow<String?>(null)
+    val nearbyError: StateFlow<String?> = _nearbyError.asStateFlow()
+
     // Generate unique local ID
     val localId: Long = Random.nextLong(1, Long.MAX_VALUE)
 
@@ -319,8 +329,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Send simulated TCP data to the selected peer. */
     fun sendTcpData(payload: String = "Hello via TCP!") {
-        val targetId = _selectedPeerId.value ?: return
-        val peer = findPeerByPeerId(targetId) ?: return
+        val targetId = _selectedPeerId.value
+        if (targetId == null) {
+            Log.w(TAG, "sendTcpData: no peer selected")
+            return
+        }
+        val peer = findPeerByPeerId(targetId)
+        if (peer == null) {
+            Log.w(TAG, "sendTcpData: peer $targetId not found in ${_peers.value.values.map { "${it.peerId}(${it.endpointId})" }}")
+            return
+        }
         val seq = ++tcpSeqNum
 
         if (_transmissionMode.value == TransmissionMode.CSMA_CD) {
@@ -382,8 +400,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Send simulated UDP data to the selected peer. */
     fun sendUdpData(payload: String = "Hello via UDP!") {
-        val targetId = _selectedPeerId.value ?: return
-        val peer = findPeerByPeerId(targetId) ?: return
+        val targetId = _selectedPeerId.value
+        if (targetId == null) {
+            Log.w(TAG, "sendUdpData: no peer selected")
+            return
+        }
+        val peer = findPeerByPeerId(targetId)
+        if (peer == null) {
+            Log.w(TAG, "sendUdpData: peer $targetId not found in ${_peers.value.values.map { "${it.peerId}(${it.endpointId})" }}")
+            return
+        }
 
         if (_transmissionMode.value == TransmissionMode.CSMA_CD) {
             viewModelScope.launch {
@@ -412,6 +438,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Handle incoming data messages. */
     private fun onDataReceived(endpointId: String, message: MeshMessage) {
+        Log.d(TAG, "onDataReceived from $endpointId: type=${message.getMessageType()}, data=${message.data.take(50)}")
         val senderId = message.senderId
         val senderModel = _peers.value[endpointId]?.deviceModel ?: "Unknown"
 
@@ -728,6 +755,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isLeader.value = leaderId == localId
             }
         }
+
+        // Observe discovery diagnostics
+        viewModelScope.launch { nearbyManager.isDiscovering.collect { _nearbyIsDiscovering.value = it } }
+        viewModelScope.launch { nearbyManager.isAdvertising.collect { _nearbyIsAdvertising.value = it } }
+        viewModelScope.launch { nearbyManager.lastError.collect { _nearbyError.value = it } }
 
         isInitialized = true
     }

@@ -6,11 +6,14 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Security
@@ -114,23 +117,31 @@ fun OnboardingScreen(
                 Spacer(modifier = Modifier.width(64.dp))
             }
 
-            // Page indicators
+            // Page indicators — morphing pill
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 repeat(3) { index ->
+                    val isActive = index == pagerState.currentPage
                     val color by animateColorAsState(
-                        targetValue = if (index == pagerState.currentPage)
+                        targetValue = if (isActive)
                             MaterialTheme.colorScheme.primary
                         else
                             MaterialTheme.colorScheme.surfaceVariant,
+                        animationSpec = spring(stiffness = Spring.StiffnessLow),
                         label = "dotColor"
+                    )
+                    val width by animateDpAsState(
+                        targetValue = if (isActive) 24.dp else 8.dp,
+                        animationSpec = spring(dampingRatio = 0.7f),
+                        label = "dotWidth"
                     )
                     Box(
                         modifier = Modifier
-                            .size(if (index == pagerState.currentPage) 10.dp else 8.dp)
-                            .clip(CircleShape)
+                            .height(8.dp)
+                            .width(width)
+                            .clip(RoundedCornerShape(4.dp))
                             .background(color)
                     )
                 }
@@ -138,20 +149,28 @@ fun OnboardingScreen(
 
             // Next / Grant Permissions button
             if (pagerState.currentPage < 2) {
-                Button(onClick = {
-                    scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                }) {
+                Button(
+                    onClick = {
+                        scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                ) {
                     Text("Next")
                 }
             } else {
-                Button(onClick = {
-                    if (allGranted) {
-                        onComplete()
-                    } else {
-                        permissionDenied = false
-                        permissionLauncher.launch(PermissionHelper.getRequiredPermissions())
-                    }
-                }) {
+                Button(
+                    onClick = {
+                        if (allGranted) {
+                            onComplete()
+                        } else {
+                            permissionDenied = false
+                            permissionLauncher.launch(PermissionHelper.getRequiredPermissions())
+                        }
+                    },
+                    shape = MaterialTheme.shapes.medium,
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                ) {
                     Text(if (allGranted) "Get Started" else "Grant Permissions")
                 }
             }
@@ -182,7 +201,7 @@ private fun OnboardingPage(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    modifier = Modifier.size(72.dp),
+                    modifier = Modifier.size(96.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
 
@@ -243,7 +262,7 @@ private fun PermissionsPage(
                 Icon(
                     imageVector = Icons.Filled.Security,
                     contentDescription = null,
-                    modifier = Modifier.size(72.dp),
+                    modifier = Modifier.size(96.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
 
