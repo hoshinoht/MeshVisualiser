@@ -25,6 +25,7 @@ class NearbyConnectionsManager(
         private val context: Context,
         private val localId: Long,
         private val serviceId: String = MeshVisualizerApp.SERVICE_ID,
+        private val displayName: String = Build.MODEL,
         private val onMessageReceived: (endpointId: String, message: MeshMessage) -> Unit
 ) {
   companion object {
@@ -105,7 +106,7 @@ class NearbyConnectionsManager(
 
                   // Send handshake with our ID, then device info
                   sendMessage(endpointId, MeshMessage.handshake(localId))
-                  sendMessage(endpointId, MeshMessage.deviceInfo(localId, Build.MODEL))
+                  sendMessage(endpointId, MeshMessage.deviceInfo(localId, displayName))
                 }
                 ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED -> {
                   Log.d(TAG, "Connection rejected by $endpointId")

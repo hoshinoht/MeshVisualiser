@@ -25,6 +25,8 @@ import com.example.meshvisualiser.ui.theme.StatusConnected
 
 @Composable
 fun ConnectionScreen(
+    displayName: String,
+    onDisplayNameChange: (String) -> Unit,
     groupCode: String,
     onGroupCodeChange: (String) -> Unit,
     connectionState: ConnectionFlowState,
@@ -81,6 +83,18 @@ fun ConnectionScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     OutlinedTextField(
+                        value = displayName,
+                        onValueChange = onDisplayNameChange,
+                        label = { Text("Display Name") },
+                        placeholder = { Text("e.g. Alice") },
+                        singleLine = true,
+                        enabled = connectionState == ConnectionFlowState.IDLE,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
                         value = groupCode,
                         onValueChange = onGroupCodeChange,
                         label = { Text("Group Code") },
@@ -109,6 +123,7 @@ fun ConnectionScreen(
                     Button(
                         onClick = onJoinGroup,
                         enabled = connectionState == ConnectionFlowState.IDLE
+                                && displayName.isNotBlank()
                                 && groupCode.isNotEmpty()
                                 && groupCodeError == null,
                         modifier = Modifier.fillMaxWidth().height(56.dp),

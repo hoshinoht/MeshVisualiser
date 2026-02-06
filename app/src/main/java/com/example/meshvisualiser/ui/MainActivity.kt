@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,21 +47,13 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.meshvisualiser.models.MeshState
 import com.example.meshvisualiser.models.PeerInfo
 import com.example.meshvisualiser.models.TransmissionMode
 import com.example.meshvisualiser.simulation.CsmaState
-import com.example.meshvisualiser.simulation.CsmacdState
 import com.example.meshvisualiser.ui.components.*
 import com.example.meshvisualiser.ui.theme.*
-import com.google.ar.core.Config
-import com.google.ar.core.Plane
-import com.google.ar.core.Session
-import com.google.ar.core.TrackingState
-import io.github.sceneview.ar.ARSceneView
-import io.github.sceneview.math.Position
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -105,12 +96,11 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
     val peerRttHistory by viewModel.peerRttHistory.collectAsStateWithLifecycle()
     val transmissionMode by viewModel.transmissionMode.collectAsStateWithLifecycle()
     val csmaState by viewModel.csmaState.collectAsStateWithLifecycle()
+    val packetAnimEvents by viewModel.packetAnimEvents.collectAsStateWithLifecycle()
+    val displayName by viewModel.displayName.collectAsStateWithLifecycle()
 
-    var showGraph by remember { mutableStateOf(false) }
-    // 0 = Topology, 1 = Connections
-    var graphTab by remember { mutableIntStateOf(0) }
     var showDataSheet by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Auto-select peer when only one valid peer exists
     val validPeers = peers.values.filter { it.hasValidPeerId }
@@ -121,76 +111,24 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // AR Scene
-        ARSceneViewComposable(viewModel = viewModel)
+        // Full-screen mesh visualization (replaces AR camera)
+        MeshVisualizationView(
+            localId = viewModel.localId,
+            peers = peers,
+            leaderId = currentLeaderId,
+            peerRttHistory = peerRttHistory,
+            dataLogs = dataLogs,
+            packetAnimEvents = packetAnimEvents,
+            onEventConsumed = { viewModel.consumePacketEvent(it) }
+        )
 
-        // Top: Status bar only
+        // Top: Status bar
         StatusOverlay(
             localId = viewModel.localId,
             meshState = meshState,
-            statusMessage = statusMessage
+            statusMessage = statusMessage,
+            displayName = displayName
         )
-
-        // Graph panel (collapsible) — Topology or Connections
-        AnimatedVisibility(
-            visible = showGraph && peers.isNotEmpty(),
-            modifier = Modifier.align(Alignment.TopCenter)
-                .padding(top = 80.dp),
-            enter = expandVertically(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMedium
-                )
-            ) + fadeIn()
-        ) {
-            GlassSurface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                shape = MaterialTheme.shapes.small
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    PrimaryTabRow(
-                        selectedTabIndex = graphTab,
-                        containerColor = Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Tab(
-                            selected = graphTab == 0,
-                            onClick = { graphTab = 0 },
-                            text = {
-                                Text("Topology", style = MaterialTheme.typography.labelSmall)
-                            }
-                        )
-                        Tab(
-                            selected = graphTab == 1,
-                            onClick = { graphTab = 1 },
-                            text = {
-                                Text("Connections", style = MaterialTheme.typography.labelSmall)
-                            }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    if (graphTab == 0) {
-                        TopologyView(
-                            localId = viewModel.localId,
-                            peers = peers,
-                            leaderId = currentLeaderId,
-                            peerRttHistory = peerRttHistory
-                        )
-                    } else {
-                        ConnectionGraphView(
-                            localId = viewModel.localId,
-                            peers = peers,
-                            dataLogs = dataLogs
-                        )
-                    }
-                }
-            }
-        }
 
         // CSMA/CD overlay
         if (transmissionMode == TransmissionMode.CSMA_CD &&
@@ -210,7 +148,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
             ) {
-                // Floating action row (topology, quiz, etc.)
+                // Floating action row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -238,9 +176,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
                                         tint = StatusLeader
                                     )
                                 }
-                            }
-                            IconButton(onClick = { showGraph = !showGraph }) {
-                                Icon(Icons.Default.Widgets, contentDescription = "Topology")
                             }
                             IconButton(onClick = {
                                 viewModel.startQuiz()
@@ -380,60 +315,11 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
 }
 
 @Composable
-fun ARSceneViewComposable(viewModel: MainViewModel) {
-    var arSceneView: ARSceneView? by remember { mutableStateOf(null) }
-
-    DisposableEffect(Unit) { onDispose { arSceneView?.destroy() } }
-
-    AndroidView(
-        factory = { ctx ->
-            ARSceneView(ctx).apply {
-                arSceneView = this
-
-                configureSession { session, config ->
-                    config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-                    config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-                }
-
-                onFrame = { frameTime ->
-                    this@apply.frame?.let { frame ->
-                        val camera = frame.camera
-
-                        if (camera.trackingState == TrackingState.TRACKING) {
-                            val cameraPose = camera.pose
-                            val cameraPosition =
-                                Position(cameraPose.tx(), cameraPose.ty(), cameraPose.tz())
-
-                            viewModel.updateFrame(cameraPose, cameraPosition)
-
-                            val quality = this@apply.session?.let {
-                                estimateMappingQuality(it)
-                            } ?: 0
-                            viewModel.updateMappingQuality(quality)
-                        }
-                    }
-                }
-
-                onSessionCreated = { session ->
-                    viewModel.setArSession(session)
-                }
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
-}
-
-private fun estimateMappingQuality(session: Session): Int {
-    val trackingPlanes = session.getAllTrackables(Plane::class.java)
-        .count { it.trackingState == TrackingState.TRACKING }
-    return minOf(trackingPlanes * 20, 100)
-}
-
-@Composable
 fun StatusOverlay(
     localId: Long,
     meshState: MeshState,
-    statusMessage: String
+    statusMessage: String,
+    displayName: String = ""
 ) {
     val stateColor by animateColorAsState(
         targetValue = when (meshState) {
@@ -460,7 +346,7 @@ fun StatusOverlay(
         ) {
             // My ID
             Text(
-                text = "My ID: ${localId.toString().takeLast(6)}",
+                text = if (displayName.isNotBlank()) displayName else "My ID: ${localId.toString().takeLast(6)}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -721,7 +607,7 @@ fun DataExchangePanel(
                 state = rawListState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 300.dp)
+                    .heightIn(max = 480.dp)
                     .clip(MaterialTheme.shapes.extraSmall)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
                     .padding(4.dp)
@@ -771,7 +657,7 @@ fun DataExchangePanel(
                 state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 350.dp)
+                    .heightIn(max = 520.dp)
                     .clip(MaterialTheme.shapes.extraSmall)
                     .padding(2.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -1033,4 +919,3 @@ private fun getStatusInfo(event: TransferEvent): StatusInfo {
 }
 
 private const val TCP_MAX_RETRIES_UI = 3
-

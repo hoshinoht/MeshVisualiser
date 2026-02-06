@@ -22,15 +22,10 @@
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="tiramisu" />
 
-    <!-- Camera for ARCore -->
-    <uses-permission android:name="android.permission.CAMERA" />
-
-    <!-- Internet for Cloud Anchors -->
+    <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Hardware features -->
-    <uses-feature android:name="android.hardware.camera.ar" android:required="true" />
-    <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
@@ -43,12 +38,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MeshVisualiser"
         tools:targetApi="31">
-
-        <!-- ARCore metadata -->
-        <meta-data
-            android:name="com.google.ar.core"
-            android:value="required"
-            tools:replace="android:value" />
 
         <activity
             android:name=".ui.MainActivity"

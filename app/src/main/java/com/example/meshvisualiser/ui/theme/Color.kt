@@ -96,3 +96,9 @@ val TopologyPoor = Color(0xFFEF5350)
 // Surface hierarchy tokens
 val SurfaceContainerLowest = Color(0xFF0A1F24)
 val SurfaceContainerLow = Color(0xFF112A30)
+
+// Mesh visualization accents (for decorative background elements)
+val MeshAccent1 = Color(0xFF63D4FF) // cyan
+val MeshAccent2 = Color(0xFFEBB5ED) // lavender
+val MeshAccent3 = Color(0xFF4CD9DF) // teal
+val MeshAccent4 = Color(0xFFFFD54F) // amber

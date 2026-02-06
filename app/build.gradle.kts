@@ -59,12 +59,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.runtime:runtime-livedata")
 
-    // ARCore
-    implementation("com.google.ar:core:1.52.0")
-
-    // SceneView for AR rendering (Compose compatible)
-    implementation("io.github.sceneview:arsceneview:2.3.0")
-
     // Google Play Services - Nearby Connections
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
 

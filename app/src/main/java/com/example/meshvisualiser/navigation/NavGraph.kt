@@ -1,6 +1,7 @@
 package com.example.meshvisualiser.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
@@ -19,6 +20,7 @@ fun MeshNavHost(
 ) {
     val navController = rememberNavController()
 
+    val displayName by viewModel.displayName.collectAsStateWithLifecycle()
     val groupCode by viewModel.groupCode.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val peers by viewModel.peers.collectAsStateWithLifecycle()
@@ -28,6 +30,16 @@ fun MeshNavHost(
     val nearbyIsDiscovering by viewModel.nearbyIsDiscovering.collectAsStateWithLifecycle()
     val nearbyIsAdvertising by viewModel.nearbyIsAdvertising.collectAsStateWithLifecycle()
     val nearbyError by viewModel.nearbyError.collectAsStateWithLifecycle()
+
+    // Reactive navigation: when any peer (local or remote) triggers START_MESH,
+    // the ViewModel emits on navigateToMesh and we navigate here.
+    LaunchedEffect(Unit) {
+        viewModel.navigateToMesh.collect {
+            navController.navigate(Routes.MESH) {
+                popUpTo(Routes.CONNECTION) { inclusive = true }
+            }
+        }
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable(Routes.ONBOARDING) {
@@ -43,6 +55,8 @@ fun MeshNavHost(
 
         composable(Routes.CONNECTION) {
             ConnectionScreen(
+                displayName = displayName,
+                onDisplayNameChange = { viewModel.setDisplayName(it) },
                 groupCode = groupCode,
                 onGroupCodeChange = { viewModel.setGroupCode(it) },
                 connectionState = connectionState,
@@ -50,12 +64,7 @@ fun MeshNavHost(
                 lastGroupCode = lastGroupCode,
                 onJoinGroup = { viewModel.joinGroup() },
                 onLeaveGroup = { viewModel.leaveGroup() },
-                onStartMesh = {
-                    viewModel.startMeshFromLobby()
-                    navController.navigate(Routes.MESH) {
-                        popUpTo(Routes.CONNECTION) { inclusive = true }
-                    }
-                },
+                onStartMesh = { viewModel.startMeshFromLobby() },
                 groupCodeError = groupCodeError,
                 isDiscovering = nearbyIsDiscovering,
                 isAdvertising = nearbyIsAdvertising,

@@ -219,7 +219,7 @@ fun ConnectionGraphView(
         }
 
         // Connection info
-        val infoText = "P2P_CLUSTER | ${validPeers.size} connected" +
+        val infoText = "P2P_STAR | ${validPeers.size} connected" +
             if (pendingPeers.isNotEmpty()) " | ${pendingPeers.size} pending" else ""
         drawContext.canvas.nativeCanvas.drawText(
             infoText,
