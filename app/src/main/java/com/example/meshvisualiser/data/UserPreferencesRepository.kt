@@ -17,6 +17,7 @@ class UserPreferencesRepository(private val context: Context) {
     private object Keys {
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val LAST_GROUP_CODE = stringPreferencesKey("last_group_code")
+        val DISPLAY_NAME = stringPreferencesKey("display_name")
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -25,6 +26,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     val lastGroupCode: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[Keys.LAST_GROUP_CODE] ?: ""
+    }
+
+    val displayName: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[Keys.DISPLAY_NAME] ?: ""
     }
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
@@ -36,6 +41,12 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun setLastGroupCode(code: String) {
         context.dataStore.edit { prefs ->
             prefs[Keys.LAST_GROUP_CODE] = code
+        }
+    }
+
+    suspend fun setDisplayName(name: String) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.DISPLAY_NAME] = name
         }
     }
 }

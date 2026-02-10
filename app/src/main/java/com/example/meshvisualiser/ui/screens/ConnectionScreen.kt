@@ -7,8 +7,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +25,8 @@ import com.example.meshvisualiser.ui.theme.StatusConnected
 
 @Composable
 fun ConnectionScreen(
+    displayName: String,
+    onDisplayNameChange: (String) -> Unit,
     groupCode: String,
     onGroupCodeChange: (String) -> Unit,
     connectionState: ConnectionFlowState,
@@ -30,7 +35,10 @@ fun ConnectionScreen(
     onJoinGroup: () -> Unit,
     onLeaveGroup: () -> Unit,
     onStartMesh: () -> Unit,
-    groupCodeError: String?
+    groupCodeError: String?,
+    isDiscovering: Boolean = false,
+    isAdvertising: Boolean = false,
+    nearbyError: String? = null
 ) {
     val validPeerCount = peers.values.count { it.hasValidPeerId }
 
@@ -75,6 +83,18 @@ fun ConnectionScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     OutlinedTextField(
+                        value = displayName,
+                        onValueChange = onDisplayNameChange,
+                        label = { Text("Display Name") },
+                        placeholder = { Text("e.g. Alice") },
+                        singleLine = true,
+                        enabled = connectionState == ConnectionFlowState.IDLE,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
                         value = groupCode,
                         onValueChange = onGroupCodeChange,
                         label = { Text("Group Code") },
@@ -103,9 +123,11 @@ fun ConnectionScreen(
                     Button(
                         onClick = onJoinGroup,
                         enabled = connectionState == ConnectionFlowState.IDLE
+                                && displayName.isNotBlank()
                                 && groupCode.isNotEmpty()
                                 && groupCodeError == null,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = MaterialTheme.shapes.medium
                     ) {
                         if (connectionState == ConnectionFlowState.JOINING) {
                             CircularProgressIndicator(
@@ -153,6 +175,73 @@ fun ConnectionScreen(
                                 )
                             }
 
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Discovery status indicators
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                val discoveringColor = if (isDiscovering) StatusConnected else MaterialTheme.colorScheme.error
+                                val advertisingColor = if (isAdvertising) StatusConnected else MaterialTheme.colorScheme.error
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(discoveringColor)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isDiscovering) "Discovering" else "Not discovering",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(advertisingColor)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isAdvertising) "Advertising" else "Not advertising",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // Error banner
+                            if (nearbyError != null) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Surface(
+                                    color = MaterialTheme.colorScheme.errorContainer,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Error,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = nearbyError,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // Peer list
@@ -174,34 +263,35 @@ fun ConnectionScreen(
                                     shape = MaterialTheme.shapes.small,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(modifier = Modifier.padding(8.dp)) {
+                                    Column {
                                         peers.values.filter { it.hasValidPeerId }.forEach { peer ->
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .clip(CircleShape)
-                                                        .background(StatusConnected)
+                                            ListItem(
+                                                headlineContent = {
+                                                    Text(
+                                                        text = peer.deviceModel.ifEmpty { "Unknown" },
+                                                        style = MaterialTheme.typography.bodyMedium
+                                                    )
+                                                },
+                                                leadingContent = {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(10.dp)
+                                                            .clip(CircleShape)
+                                                            .background(StatusConnected)
+                                                    )
+                                                },
+                                                trailingContent = {
+                                                    Text(
+                                                        text = peer.peerId.toString().takeLast(6),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                },
+                                                colors = ListItemDefaults.colors(
+                                                    containerColor = Color.Transparent
                                                 )
-                                                Text(
-                                                    text = peer.deviceModel.ifEmpty { "Unknown" },
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                Text(
-                                                    text = peer.peerId.toString().takeLast(6),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
+                                            )
                                         }
                                     }
                                 }
@@ -213,7 +303,8 @@ fun ConnectionScreen(
                                 onClick = onStartMesh,
                                 enabled = validPeerCount >= 1
                                         && connectionState == ConnectionFlowState.IN_LOBBY,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                shape = MaterialTheme.shapes.medium
                             ) {
                                 if (connectionState == ConnectionFlowState.STARTING) {
                                     CircularProgressIndicator(
@@ -228,7 +319,7 @@ fun ConnectionScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            TextButton(onClick = onLeaveGroup) {
+                            OutlinedButton(onClick = onLeaveGroup) {
                                 Text(
                                     "Leave Group",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

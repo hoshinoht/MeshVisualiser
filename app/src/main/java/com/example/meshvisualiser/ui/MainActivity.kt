@@ -9,7 +9,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
@@ -27,11 +26,15 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,21 +47,13 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.meshvisualiser.models.MeshState
 import com.example.meshvisualiser.models.PeerInfo
 import com.example.meshvisualiser.models.TransmissionMode
 import com.example.meshvisualiser.simulation.CsmaState
-import com.example.meshvisualiser.simulation.CsmacdState
 import com.example.meshvisualiser.ui.components.*
 import com.example.meshvisualiser.ui.theme.*
-import com.google.ar.core.Config
-import com.google.ar.core.Plane
-import com.google.ar.core.Session
-import com.google.ar.core.TrackingState
-import io.github.sceneview.ar.ARSceneView
-import io.github.sceneview.math.Position
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -86,8 +81,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel) {
+fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
     val meshState by viewModel.meshState.collectAsStateWithLifecycle()
     val peers by viewModel.peers.collectAsStateWithLifecycle()
     val isLeader by viewModel.isLeader.collectAsStateWithLifecycle()
@@ -100,104 +96,208 @@ fun MainScreen(viewModel: MainViewModel) {
     val peerRttHistory by viewModel.peerRttHistory.collectAsStateWithLifecycle()
     val transmissionMode by viewModel.transmissionMode.collectAsStateWithLifecycle()
     val csmaState by viewModel.csmaState.collectAsStateWithLifecycle()
-    val quizState by viewModel.quizState.collectAsStateWithLifecycle()
+    val packetAnimEvents by viewModel.packetAnimEvents.collectAsStateWithLifecycle()
+    val displayName by viewModel.displayName.collectAsStateWithLifecycle()
 
-    var showGraph by remember { mutableStateOf(false) }
-    // 0 = Topology, 1 = Connections
-    var graphTab by remember { mutableIntStateOf(0) }
+    var showDataSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // Auto-select peer when only one valid peer exists
+    val validPeers = peers.values.filter { it.hasValidPeerId }
+    LaunchedEffect(validPeers.size, selectedPeerId) {
+        if (validPeers.size == 1 && selectedPeerId == null) {
+            viewModel.selectPeer(validPeers.first().peerId)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // AR Scene
-        ARSceneViewComposable(viewModel = viewModel)
+        // Full-screen mesh visualization (replaces AR camera)
+        MeshVisualizationView(
+            localId = viewModel.localId,
+            peers = peers,
+            leaderId = currentLeaderId,
+            peerRttHistory = peerRttHistory,
+            dataLogs = dataLogs,
+            packetAnimEvents = packetAnimEvents,
+            onEventConsumed = { viewModel.consumePacketEvent(it) }
+        )
 
-        // Top: Status + Peer List
-        Column(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
-            StatusOverlay(
-                localId = viewModel.localId,
-                meshState = meshState,
-                peerCount = peers.size,
-                isLeader = isLeader,
-                currentLeaderId = currentLeaderId,
-                statusMessage = statusMessage,
-                isConnected = meshState == MeshState.CONNECTED,
-                onToggleTopology = { showGraph = !showGraph },
-                onStartQuiz = { viewModel.startQuiz() }
-            )
+        // Top: Status bar
+        StatusOverlay(
+            localId = viewModel.localId,
+            meshState = meshState,
+            statusMessage = statusMessage,
+            displayName = displayName
+        )
 
-            if (peers.isNotEmpty()) {
-                PeerListPanel(
-                    peers = peers,
-                    selectedPeerId = selectedPeerId,
-                    onSelectPeer = { viewModel.selectPeer(it) }
-                )
-            }
-
-            // Graph panel (collapsible) — Topology or Connections
-            AnimatedVisibility(visible = showGraph && peers.isNotEmpty()) {
-                GlassSurface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        // Tab row to switch between views
-                        TabRow(
-                            selectedTabIndex = graphTab,
-                            containerColor = Color.Transparent,
-                            contentColor = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Tab(
-                                selected = graphTab == 0,
-                                onClick = { graphTab = 0 },
-                                text = {
-                                    Text("Topology", style = MaterialTheme.typography.labelSmall)
-                                }
-                            )
-                            Tab(
-                                selected = graphTab == 1,
-                                onClick = { graphTab = 1 },
-                                text = {
-                                    Text("Connections", style = MaterialTheme.typography.labelSmall)
-                                }
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        if (graphTab == 0) {
-                            TopologyView(
-                                localId = viewModel.localId,
-                                peers = peers,
-                                leaderId = currentLeaderId,
-                                peerRttHistory = peerRttHistory
-                            )
-                        } else {
-                            ConnectionGraphView(
-                                localId = viewModel.localId,
-                                peers = peers,
-                                dataLogs = dataLogs
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // CSMA/CD overlay (above data exchange panel)
+        // CSMA/CD overlay
         if (transmissionMode == TransmissionMode.CSMA_CD &&
             csmaState.currentState != CsmaState.IDLE) {
             CsmacdOverlay(
                 csmaState = csmaState,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 260.dp)
+                    .padding(bottom = 200.dp)
             )
         }
 
-        // Bottom: Data Exchange Panel
-        if (peers.isNotEmpty()) {
+        // Bottom: Persistent control bar + floating toolbar
+        if (meshState == MeshState.CONNECTED) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
+                // Floating action row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HorizontalFloatingToolbar(
+                        expanded = true,
+                        content = {
+                            BadgedBox(
+                                badge = { Badge { Text("${validPeers.size}") } }
+                            ) {
+                                IconButton(onClick = {}) {
+                                    Icon(Icons.Default.Group, contentDescription = "Peers")
+                                }
+                            }
+                        },
+                        trailingContent = {
+                            if (isLeader) {
+                                IconButton(onClick = {}) {
+                                    Icon(
+                                        Icons.Default.Star,
+                                        contentDescription = "Leader",
+                                        tint = StatusLeader
+                                    )
+                                }
+                            }
+                            IconButton(onClick = {
+                                viewModel.startQuiz()
+                                onNavigateToQuiz()
+                            }) {
+                                Icon(Icons.Default.Quiz, contentDescription = "Quiz")
+                            }
+                            IconButton(onClick = { showDataSheet = true }) {
+                                Icon(Icons.Default.Code, contentDescription = "Logs")
+                            }
+                        }
+                    )
+                }
+
+                // Persistent bottom control bar
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                    tonalElevation = 6.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        // Peer selector row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (validPeers.isEmpty()) {
+                                Text(
+                                    text = "Waiting for peers...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                // Peer chips — tap to select target
+                                validPeers.forEach { peer ->
+                                    val isSelected = peer.peerId == selectedPeerId
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            viewModel.selectPeer(
+                                                if (isSelected) null else peer.peerId
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = peer.deviceModel.ifEmpty {
+                                                    peer.peerId.toString().takeLast(6)
+                                                },
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(StatusConnected)
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Mode toggle + send buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Compact mode toggle
+                            ModeSegmentedButton(
+                                selectedMode = transmissionMode,
+                                onModeSelected = { viewModel.setTransmissionMode(it) },
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            FilledTonalButton(
+                                onClick = { viewModel.sendTcpData() },
+                                enabled = selectedPeerId != null,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = LogTcp.copy(alpha = 0.3f)
+                                ),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text("TCP", color = LogTcp, style = MaterialTheme.typography.labelSmall)
+                            }
+                            FilledTonalButton(
+                                onClick = { viewModel.sendUdpData() },
+                                enabled = selectedPeerId != null,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = LogUdp.copy(alpha = 0.3f)
+                                ),
+                                shape = MaterialTheme.shapes.small,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text("UDP", color = LogUdp, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ModalBottomSheet for full Data Exchange log
+    if (showDataSheet && peers.isNotEmpty()) {
+        ModalBottomSheet(
+            onDismissRequest = { showDataSheet = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = MaterialTheme.shapes.large
+        ) {
             DataExchangePanel(
                 dataLogs = dataLogs,
                 transferEvents = transferEvents,
@@ -208,84 +308,18 @@ fun MainScreen(viewModel: MainViewModel) {
                 transmissionMode = transmissionMode,
                 onModeChanged = { viewModel.setTransmissionMode(it) },
                 onSendTcp = { viewModel.sendTcpData() },
-                onSendUdp = { viewModel.sendUdpData() },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
-
-        // Quiz overlay (fullscreen modal)
-        if (quizState.isActive) {
-            QuizOverlay(
-                quizState = quizState,
-                onAnswer = { viewModel.answerQuiz(it) },
-                onNext = { viewModel.nextQuestion() },
-                onClose = { viewModel.closeQuiz() }
+                onSendUdp = { viewModel.sendUdpData() }
             )
         }
     }
 }
 
 @Composable
-fun ARSceneViewComposable(viewModel: MainViewModel) {
-    var arSceneView: ARSceneView? by remember { mutableStateOf(null) }
-
-    DisposableEffect(Unit) { onDispose { arSceneView?.destroy() } }
-
-    AndroidView(
-        factory = { ctx ->
-            ARSceneView(ctx).apply {
-                arSceneView = this
-
-                configureSession { session, config ->
-                    config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-                    config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-                }
-
-                onFrame = { frameTime ->
-                    this@apply.frame?.let { frame ->
-                        val camera = frame.camera
-
-                        if (camera.trackingState == TrackingState.TRACKING) {
-                            val cameraPose = camera.pose
-                            val cameraPosition =
-                                Position(cameraPose.tx(), cameraPose.ty(), cameraPose.tz())
-
-                            viewModel.updateFrame(cameraPose, cameraPosition)
-
-                            val quality = this@apply.session?.let {
-                                estimateMappingQuality(it)
-                            } ?: 0
-                            viewModel.updateMappingQuality(quality)
-                        }
-                    }
-                }
-
-                onSessionCreated = { session ->
-                    viewModel.setArSession(session)
-                }
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
-}
-
-private fun estimateMappingQuality(session: Session): Int {
-    val trackingPlanes = session.getAllTrackables(Plane::class.java)
-        .count { it.trackingState == TrackingState.TRACKING }
-    return minOf(trackingPlanes * 20, 100)
-}
-
-@Composable
 fun StatusOverlay(
     localId: Long,
     meshState: MeshState,
-    peerCount: Int,
-    isLeader: Boolean,
-    currentLeaderId: Long,
     statusMessage: String,
-    isConnected: Boolean = false,
-    onToggleTopology: () -> Unit = {},
-    onStartQuiz: () -> Unit = {}
+    displayName: String = ""
 ) {
     val stateColor by animateColorAsState(
         targetValue = when (meshState) {
@@ -312,7 +346,7 @@ fun StatusOverlay(
         ) {
             // My ID
             Text(
-                text = "My ID: ${localId.toString().takeLast(6)}",
+                text = if (displayName.isNotBlank()) displayName else "My ID: ${localId.toString().takeLast(6)}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -324,76 +358,6 @@ fun StatusOverlay(
                 style = MaterialTheme.typography.labelLarge,
                 color = stateColor
             )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Chip row
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AssistChip(
-                    onClick = {},
-                    label = {
-                        Text(
-                            text = "Peers: $peerCount",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                )
-
-                if (isLeader) {
-                    SuggestionChip(
-                        onClick = {},
-                        label = {
-                            Text(
-                                text = "★ LEADER",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                        },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = StatusLeader.copy(alpha = 0.2f),
-                            labelColor = StatusLeader
-                        )
-                    )
-                } else if (currentLeaderId != -1L) {
-                    SuggestionChip(
-                        onClick = {},
-                        label = {
-                            Text(
-                                text = "Following: ${currentLeaderId.toString().takeLast(6)}",
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                }
-
-                if (isConnected) {
-                    AssistChip(
-                        onClick = onToggleTopology,
-                        label = {
-                            Text(
-                                text = "Topology",
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
-                    AssistChip(
-                        onClick = onStartQuiz,
-                        label = {
-                            Text(
-                                text = "Quiz",
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
-                }
-            }
         }
     }
 }
@@ -429,49 +393,38 @@ fun PeerListPanel(
                 )
             }
 
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ) + fadeIn()
+            ) {
                 Column(modifier = Modifier.padding(top = 4.dp)) {
                     validPeers.forEach { peer ->
                         val isSelected = peer.peerId == selectedPeerId
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp)
-                                .clickable {
-                                    onSelectPeer(if (isSelected) null else peer.peerId)
-                                },
-                            color = if (isSelected)
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                            else Color.Transparent,
-                            shape = MaterialTheme.shapes.extraSmall
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Connection status dot
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    text = peer.peerId.toString().takeLast(6),
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            },
+                            supportingContent = {
+                                Text(peer.deviceModel.ifEmpty { "Unknown" })
+                            },
+                            leadingContent = {
                                 Box(
                                     modifier = Modifier
-                                        .size(8.dp)
+                                        .size(10.dp)
                                         .clip(CircleShape)
                                         .background(StatusConnected)
                                 )
-                                // Peer ID (short)
-                                Text(
-                                    text = peer.peerId.toString().takeLast(6),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                // Device model
-                                Text(
-                                    text = peer.deviceModel.ifEmpty { "Unknown" },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                if (isSelected) {
+                            },
+                            trailingContent = if (isSelected) {
+                                {
                                     Text(
                                         text = "TARGET",
                                         style = MaterialTheme.typography.labelSmall,
@@ -479,11 +432,85 @@ fun PeerListPanel(
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
-                            }
-                        }
+                            } else null,
+                            colors = ListItemDefaults.colors(
+                                containerColor = if (isSelected)
+                                    MaterialTheme.colorScheme.primaryContainer
+                                else Color.Transparent
+                            ),
+                            modifier = Modifier
+                                .clip(MaterialTheme.shapes.extraSmall)
+                                .clickable {
+                                    onSelectPeer(if (isSelected) null else peer.peerId)
+                                }
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun DataExchangePeek(
+    transmissionMode: TransmissionMode,
+    onModeChanged: (TransmissionMode) -> Unit,
+    selectedPeerId: Long?,
+    onSendTcp: () -> Unit,
+    onSendUdp: () -> Unit,
+    onExpand: () -> Unit
+) {
+    Column(modifier = Modifier.padding(12.dp)) {
+        // Mode toggle
+        ModeSegmentedButton(
+            selectedMode = transmissionMode,
+            onModeSelected = onModeChanged,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+        )
+
+        // Send buttons
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Data Exchange",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            FilledTonalButton(
+                onClick = onSendTcp,
+                enabled = selectedPeerId != null,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = LogTcp.copy(alpha = 0.3f)
+                ),
+                shape = MaterialTheme.shapes.small,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Send TCP", color = LogTcp, style = MaterialTheme.typography.labelSmall)
+            }
+            FilledTonalButton(
+                onClick = onSendUdp,
+                enabled = selectedPeerId != null,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = LogUdp.copy(alpha = 0.3f)
+                ),
+                shape = MaterialTheme.shapes.small,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Send UDP", color = LogUdp, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
+        if (selectedPeerId == null) {
+            Text(
+                text = "Select a peer above to send data",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
         }
     }
 }
@@ -506,175 +533,172 @@ fun DataExchangePanel(
     val rawListState = rememberLazyListState()
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
-    // Auto-scroll to bottom when new entries arrive
+    // Auto-scroll to top when new entries arrive (newest first)
     LaunchedEffect(transferEvents.size) {
         if (transferEvents.isNotEmpty() && !showRawLog) {
-            listState.animateScrollToItem(transferEvents.lastIndex)
+            listState.animateScrollToItem(0)
         }
     }
     LaunchedEffect(dataLogs.size) {
         if (dataLogs.isNotEmpty() && showRawLog) {
-            rawListState.animateScrollToItem(dataLogs.lastIndex)
+            rawListState.animateScrollToItem(0)
         }
     }
 
-    GlassSurface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Mode toggle
-            ModeSegmentedButton(
-                selectedMode = transmissionMode,
-                onModeSelected = onModeChanged,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+    Column(modifier = modifier.padding(12.dp)) {
+        // Mode toggle
+        ModeSegmentedButton(
+            selectedMode = transmissionMode,
+            onModeSelected = onModeChanged,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+        )
+
+        // Send buttons
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Data Exchange",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
             )
-
-            // Send buttons
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+            FilledTonalButton(
+                onClick = onSendTcp,
+                enabled = selectedPeerId != null,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = LogTcp.copy(alpha = 0.3f)
+                ),
+                shape = MaterialTheme.shapes.small,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text(
-                    text = "Data Exchange",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                FilledTonalButton(
-                    onClick = onSendTcp,
-                    enabled = selectedPeerId != null,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = LogTcp.copy(alpha = 0.2f)
-                    ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Text("Send TCP", color = LogTcp, style = MaterialTheme.typography.labelSmall)
-                }
-                FilledTonalButton(
-                    onClick = onSendUdp,
-                    enabled = selectedPeerId != null,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = LogUdp.copy(alpha = 0.2f)
-                    ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Text("Send UDP", color = LogUdp, style = MaterialTheme.typography.labelSmall)
-                }
+                Text("Send TCP", color = LogTcp, style = MaterialTheme.typography.labelSmall)
             }
-
-            if (selectedPeerId == null) {
-                Text(
-                    text = "Select a peer above to send data",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
+            FilledTonalButton(
+                onClick = onSendUdp,
+                enabled = selectedPeerId != null,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = LogUdp.copy(alpha = 0.3f)
+                ),
+                shape = MaterialTheme.shapes.small,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Send UDP", color = LogUdp, style = MaterialTheme.typography.labelSmall)
             }
+        }
 
-            Spacer(modifier = Modifier.height(4.dp))
+        if (selectedPeerId == null) {
+            Text(
+                text = "Select a peer above to send data",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+        }
 
-            // Log area
-            if (showRawLog) {
-                // Raw monospace log (existing behavior)
-                LazyColumn(
-                    state = rawListState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 180.dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                        .padding(4.dp)
-                ) {
-                    if (dataLogs.isEmpty()) {
-                        item {
-                            Text(
-                                text = "No data exchanged yet",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        }
-                    }
-                    items(dataLogs) { entry ->
-                        val arrow = if (entry.direction == "OUT") "\u2192" else "\u2190"
-                        val color = when (entry.protocol) {
-                            "TCP" -> LogTcp
-                            "UDP" -> LogUdp
-                            "ACK" -> LogAck
-                            "DROP", "RETRY" -> LogError
-                            else -> MaterialTheme.colorScheme.onSurface
-                        }
-                        val seqStr = entry.seqNum?.let { " #$it" } ?: ""
-                        val rttStr = entry.rttMs?.let { " [${it}ms]" } ?: ""
-                        val modelStr = entry.peerModel.ifEmpty {
-                            entry.peerId.toString().takeLast(6)
-                        }
+        Spacer(modifier = Modifier.height(4.dp))
 
+        // Log area
+        if (showRawLog) {
+            // Raw monospace log (existing behavior)
+            LazyColumn(
+                state = rawListState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    .padding(4.dp)
+            ) {
+                if (dataLogs.isEmpty()) {
+                    item {
                         Text(
-                            text = "[${timeFormat.format(Date(entry.timestamp))}] " +
-                                "$arrow ${entry.protocol}$seqStr " +
-                                "${if (entry.direction == "OUT") "to" else "from"} $modelStr " +
-                                "(${entry.sizeBytes}B) ${entry.payload}$rttStr",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace
-                            ),
-                            color = color,
-                            modifier = Modifier.padding(vertical = 1.dp)
+                            text = "No data exchanged yet",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
                         )
                     }
                 }
-            } else {
-                // Friendly transfer event cards
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 220.dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .padding(2.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (transferEvents.isEmpty()) {
-                        item {
-                            Text(
-                                text = "No data exchanged yet",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        }
+                items(dataLogs.reversed()) { entry ->
+                    val arrow = if (entry.direction == "OUT") "\u2192" else "\u2190"
+                    val color = when (entry.protocol) {
+                        "TCP" -> LogTcp
+                        "UDP" -> LogUdp
+                        "ACK" -> LogAck
+                        "DROP", "RETRY" -> LogError
+                        else -> MaterialTheme.colorScheme.onSurface
                     }
-                    items(transferEvents, key = { it.id }) { event ->
-                        TransferEventCard(event = event)
+                    val seqStr = entry.seqNum?.let { " #$it" } ?: ""
+                    val rttStr = entry.rttMs?.let { " [${it}ms]" } ?: ""
+                    val modelStr = entry.peerModel.ifEmpty {
+                        entry.peerId.toString().takeLast(6)
                     }
+
+                    Text(
+                        text = "[${timeFormat.format(Date(entry.timestamp))}] " +
+                            "$arrow ${entry.protocol}$seqStr " +
+                            "${if (entry.direction == "OUT") "to" else "from"} $modelStr " +
+                            "(${entry.sizeBytes}B) ${entry.payload}$rttStr",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        color = color,
+                        modifier = Modifier.padding(vertical = 1.dp)
+                    )
                 }
             }
-
-            // Toggle raw/friendly view
-            Row(
+        } else {
+            // Friendly transfer event cards
+            LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onToggleRawLog() }
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                    .heightIn(max = 520.dp)
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .padding(2.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    imageVector = if (showRawLog) Icons.Default.Visibility else Icons.Default.Code,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (showRawLog) "Show friendly view" else "Show raw protocol log",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (transferEvents.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No data exchanged yet",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+                items(transferEvents.reversed(), key = { it.id }) { event ->
+                    TransferEventCard(event = event)
+                }
             }
+        }
+
+        // Toggle raw/friendly view
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggleRawLog() }
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (showRawLog) Icons.Default.Visibility else Icons.Default.Code,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (showRawLog) "Show friendly view" else "Show raw protocol log",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -694,11 +718,11 @@ fun TransferEventCard(event: TransferEvent) {
             TransferStatus.IN_PROGRESS -> { /* stays indeterminate */ }
             TransferStatus.RETRYING -> { /* stays indeterminate */ }
             TransferStatus.DELIVERED, TransferStatus.FAILED ->
-                progressAnimatable.animateTo(1f, animationSpec = tween(300))
+                progressAnimatable.animateTo(1f, animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f))
             TransferStatus.SENT ->
-                progressAnimatable.animateTo(1f, animationSpec = tween(500))
+                progressAnimatable.animateTo(1f, animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f))
             TransferStatus.DROPPED ->
-                progressAnimatable.animateTo(1f, animationSpec = tween(300))
+                progressAnimatable.animateTo(1f, animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f))
         }
     }
 
@@ -708,7 +732,7 @@ fun TransferEventCard(event: TransferEvent) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
         ),
         shape = MaterialTheme.shapes.small
     ) {
@@ -732,7 +756,7 @@ fun TransferEventCard(event: TransferEvent) {
                     modifier = Modifier.weight(1f)
                 )
                 Surface(
-                    color = protocolColor.copy(alpha = 0.15f),
+                    color = protocolColor.copy(alpha = 0.25f),
                     shape = MaterialTheme.shapes.extraSmall
                 ) {
                     Text(
@@ -895,4 +919,3 @@ private fun getStatusInfo(event: TransferEvent): StatusInfo {
 }
 
 private const val TCP_MAX_RETRIES_UI = 3
-

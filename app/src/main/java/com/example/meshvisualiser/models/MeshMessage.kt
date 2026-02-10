@@ -58,6 +58,10 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
             return MeshMessage(MessageType.DATA_UDP.value, localId, payload)
         }
 
+        fun startMesh(localId: Long): MeshMessage {
+            return MeshMessage(MessageType.START_MESH.value, localId)
+        }
+
         fun poseUpdate(
             localId: Long,
             x: Float,

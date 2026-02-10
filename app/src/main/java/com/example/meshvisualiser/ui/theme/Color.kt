@@ -33,15 +33,15 @@ val md_theme_light_inversePrimary = Color(0xFF63D4FF)
 
 val md_theme_dark_primary = Color(0xFF63D4FF)
 val md_theme_dark_onPrimary = Color(0xFF003546)
-val md_theme_dark_primaryContainer = Color(0xFF004D64)
+val md_theme_dark_primaryContainer = Color(0xFF005F7A)
 val md_theme_dark_onPrimaryContainer = Color(0xFFBCE9FF)
 val md_theme_dark_secondary = Color(0xFF4CD9DF)
 val md_theme_dark_onSecondary = Color(0xFF003739)
-val md_theme_dark_secondaryContainer = Color(0xFF004F53)
+val md_theme_dark_secondaryContainer = Color(0xFF006166)
 val md_theme_dark_onSecondaryContainer = Color(0xFF6FF6FC)
 val md_theme_dark_tertiary = Color(0xFFEBB5ED)
 val md_theme_dark_onTertiary = Color(0xFF49204E)
-val md_theme_dark_tertiaryContainer = Color(0xFF623766)
+val md_theme_dark_tertiaryContainer = Color(0xFF7A4580)
 val md_theme_dark_onTertiaryContainer = Color(0xFFFFD6FF)
 val md_theme_dark_error = Color(0xFFFFB4AB)
 val md_theme_dark_onError = Color(0xFF690005)
@@ -59,10 +59,10 @@ val md_theme_dark_inverseOnSurface = Color(0xFF00363D)
 val md_theme_dark_inversePrimary = Color(0xFF006783)
 
 // Domain-specific status colors (functional, not themeable)
-val StatusDiscovering = Color(0xFFFFA726)
-val StatusElecting = Color(0xFF42A5F5)
+val StatusDiscovering = Color(0xFFFF9800)
+val StatusElecting = Color(0xFF2196F3)
 val StatusResolving = Color(0xFFAB47BC)
-val StatusConnected = Color(0xFF66BB6A)
+val StatusConnected = Color(0xFF4CAF50)
 val StatusLeader = Color(0xFFFFD54F)
 
 // Data exchange log colors
@@ -92,3 +92,13 @@ val CsmaBackoff = Color(0xFFAB47BC)
 val TopologyExcellent = Color(0xFF66BB6A)
 val TopologyGood = Color(0xFFFFCA28)
 val TopologyPoor = Color(0xFFEF5350)
+
+// Surface hierarchy tokens
+val SurfaceContainerLowest = Color(0xFF0A1F24)
+val SurfaceContainerLow = Color(0xFF112A30)
+
+// Mesh visualization accents (for decorative background elements)
+val MeshAccent1 = Color(0xFF63D4FF) // cyan
+val MeshAccent2 = Color(0xFFEBB5ED) // lavender
+val MeshAccent3 = Color(0xFF4CD9DF) // teal
+val MeshAccent4 = Color(0xFFFFD54F) // amber

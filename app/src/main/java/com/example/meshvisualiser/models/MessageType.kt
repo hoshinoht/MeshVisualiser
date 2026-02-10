@@ -26,7 +26,10 @@ enum class MessageType(val value: Int) {
     DATA_TCP(6),
 
     /** Simulated UDP data (fire-and-forget) */
-    DATA_UDP(7);
+    DATA_UDP(7),
+
+    /** Signal all peers to start mesh formation */
+    START_MESH(8);
 
     companion object {
         fun fromValue(value: Int): MessageType? = entries.find { it.value == value }

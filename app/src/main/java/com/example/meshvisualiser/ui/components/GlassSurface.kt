@@ -17,11 +17,12 @@ fun GlassSurface(
     Surface(
         modifier = modifier,
         shape = shape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
-        tonalElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+        tonalElevation = 6.dp,
+        shadowElevation = 2.dp,
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
         ),
         content = content
     )

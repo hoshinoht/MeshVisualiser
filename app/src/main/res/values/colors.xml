@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Launcher icon -->
-    <color name="ic_launcher_background">#121212</color>
+    <color name="ic_launcher_background">#0A1F24</color>
     
     <!-- Primary colors -->
     <color name="primary">#6200EE</color>
