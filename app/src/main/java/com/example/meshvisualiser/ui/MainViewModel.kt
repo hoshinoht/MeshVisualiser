@@ -199,6 +199,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _navigateToMesh = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
     val navigateToMesh: SharedFlow<Unit> = _navigateToMesh.asSharedFlow()
 
+    // AR: Cloud Anchor ID received from leader via COORDINATOR message
+    private val _cloudAnchorId = MutableStateFlow<String?>(null)
+    val cloudAnchorId: StateFlow<String?> = _cloudAnchorId.asStateFlow()
+
     private var isInitialized = false
 
     /** Initialize all managers with default service ID. Call after permissions are granted. */
@@ -617,6 +621,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isLeader.value = false
     }
 
+    // --- AR: Cloud Anchors & Pose ---
+
+    /**
+     * Called by [com.example.meshvisualiser.ar.ArSceneComposable] after the leader successfully
+     * hosts a Cloud Anchor. Broadcasts the anchor ID to all peers via COORDINATOR message so they
+     * can resolve it.
+     *
+     * The COORDINATOR message's [MeshMessage.coordinator] already accepts a cloudAnchorId string.
+     */
+    fun broadcastCloudAnchorId(cloudAnchorId: String) {
+        if (!isInitialized) return
+        Log.d(TAG, "Broadcasting cloud anchor ID: $cloudAnchorId")
+        nearbyManager.broadcastMessage(MeshMessage.coordinator(localId, cloudAnchorId))
+    }
+
+    /**
+     * Called by [com.example.meshvisualiser.ar.ArSceneComposable] to broadcast this device's
+     * AR pose to all mesh peers via [com.example.meshvisualiser.models.MessageType.POSE_UPDATE].
+     */
+    fun broadcastPose(x: Float, y: Float, z: Float, qx: Float, qy: Float, qz: Float, qw: Float) {
+        if (!isInitialized) return
+        meshManager.broadcastPose(x, y, z, qx, qy, qz, qw)
+    }
+
     fun startMeshFromLobby() {
         // Broadcast START_MESH to all connected peers so they transition too
         nearbyManager.broadcastMessage(MeshMessage.startMesh(localId))
@@ -649,6 +677,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         onDataReceived(endpointId, message)
                     MessageType.START_MESH ->
                         beginMesh()
+                    MessageType.COORDINATOR -> {
+                        // If the COORDINATOR message carries a non-empty cloud anchor ID,
+                        // surface it via _cloudAnchorId so ArSceneComposable can resolve it.
+                        if (message.data.isNotBlank()) {
+                            _cloudAnchorId.value = message.data
+                        }
+                        // Always forward to MeshManager for leader election tracking
+                        meshManager.onMessageReceived(endpointId, message)
+                    }
                     else ->
                         meshManager.onMessageReceived(endpointId, message)
                 }

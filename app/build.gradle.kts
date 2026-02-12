@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Load local.properties for API keys
+val localProperties = Properties().apply {
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -16,6 +26,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ARCore Cloud Anchor API key — set in local.properties
+        buildConfigField(
+            "String",
+            "ARCORE_CLOUD_ANCHOR_API_KEY",
+            "\"${localProperties.getProperty("ARCORE_CLOUD_ANCHOR_API_KEY", "")}\""
+        )
     }
 
     buildTypes {
@@ -39,6 +56,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -71,6 +89,10 @@ dependencies {
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // ARCore and SceneView
+    implementation("com.google.ar:core:1.52.0")
+    implementation("io.github.sceneview:arsceneview:2.3.3")
 
     // JSON serialization
     implementation("com.google.code.gson:gson:2.11.0")
