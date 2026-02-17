@@ -78,7 +78,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TAG = "MainViewModel"
         private const val TCP_ACK_TIMEOUT_MS = 1_000L
         private const val TCP_MAX_RETRIES = 3
-        private const val UDP_DROP_PROBABILITY = 0.10
         private const val MAX_LOG_ENTRIES = 100
         private const val RTT_HISTORY_SIZE = 20
     }
@@ -158,6 +157,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _showRawLog = MutableStateFlow(false)
     val showRawLog: StateFlow<Boolean> = _showRawLog.asStateFlow()
+
+    // UDP packet loss probability (0.0–1.0), user-adjustable via slider
+    private val _udpDropProbability = MutableStateFlow(0.10f)
+    val udpDropProbability: StateFlow<Float> = _udpDropProbability.asStateFlow()
+
+    // Whether to show educational hints on transfer event cards
+    private val _showHints = MutableStateFlow(true)
+    val showHints: StateFlow<Boolean> = _showHints.asStateFlow()
 
     private val _selectedPeerId = MutableStateFlow<Long?>(null)
     val selectedPeerId: StateFlow<Long?> = _selectedPeerId.asStateFlow()
@@ -428,8 +435,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             MessageType.DATA_UDP -> {
-                // Simulate ~10% packet loss
-                if (Random.nextDouble() < UDP_DROP_PROBABILITY) {
+                // Simulate configurable packet loss (user-adjustable via slider)
+                if (Random.nextDouble() < _udpDropProbability.value) {
                     addLog("IN", "DROP", senderId, senderModel,
                         "Packet dropped (simulated loss)", message.toBytes().size)
                     addTransferEvent(TransferEvent(
@@ -493,6 +500,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleRawLog() {
         _showRawLog.update { !it }
+    }
+
+    /** Set UDP packet loss probability from 0.0 to 1.0. */
+    fun setUdpDropProbability(probability: Float) {
+        _udpDropProbability.value = probability.coerceIn(0f, 1f)
+    }
+
+    fun toggleHints() {
+        _showHints.update { !it }
     }
 
     private fun findPeerByPeerId(peerId: Long): PeerInfo? {

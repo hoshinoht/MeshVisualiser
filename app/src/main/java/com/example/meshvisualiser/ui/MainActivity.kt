@@ -98,6 +98,8 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
     val csmaState by viewModel.csmaState.collectAsStateWithLifecycle()
     val packetAnimEvents by viewModel.packetAnimEvents.collectAsStateWithLifecycle()
     val displayName by viewModel.displayName.collectAsStateWithLifecycle()
+    val udpDropProbability by viewModel.udpDropProbability.collectAsStateWithLifecycle()
+    val showHints by viewModel.showHints.collectAsStateWithLifecycle()
 
     var showDataSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -303,6 +305,10 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
                 transferEvents = transferEvents,
                 showRawLog = showRawLog,
                 onToggleRawLog = { viewModel.toggleRawLog() },
+                showHints = showHints,
+                onToggleHints = { viewModel.toggleHints() },
+                udpDropProbability = udpDropProbability,
+                onDropProbabilityChanged = { viewModel.setUdpDropProbability(it) },
                 selectedPeerId = selectedPeerId,
                 peers = peers,
                 transmissionMode = transmissionMode,
@@ -521,6 +527,10 @@ fun DataExchangePanel(
     transferEvents: List<TransferEvent>,
     showRawLog: Boolean,
     onToggleRawLog: () -> Unit,
+    showHints: Boolean,
+    onToggleHints: () -> Unit,
+    udpDropProbability: Float,
+    onDropProbabilityChanged: (Float) -> Unit,
     selectedPeerId: Long?,
     peers: Map<String, PeerInfo>,
     transmissionMode: TransmissionMode,
@@ -595,6 +605,38 @@ fun DataExchangePanel(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 8.dp)
+            )
+        }
+
+        // UDP packet loss slider
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "UDP Packet Loss",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${(udpDropProbability * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LogUdp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Slider(
+                value = udpDropProbability,
+                onValueChange = onDropProbabilityChanged,
+                valueRange = 0f..1f,
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = LogUdp,
+                    activeTrackColor = LogUdp,
+                    inactiveTrackColor = LogUdp.copy(alpha = 0.2f)
+                )
             )
         }
 
@@ -673,38 +715,75 @@ fun DataExchangePanel(
                     }
                 }
                 items(transferEvents.reversed(), key = { it.id }) { event ->
-                    TransferEventCard(event = event)
+                    TransferEventCard(event = event, showHints = showHints)
                 }
             }
         }
 
-        // Toggle raw/friendly view
+        // Toggle controls row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onToggleRawLog() }
                 .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (showRawLog) Icons.Default.Visibility else Icons.Default.Code,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.width(4.dp))
+            // Toggle raw/friendly view
+            Row(
+                modifier = Modifier.clickable { onToggleRawLog() },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = if (showRawLog) Icons.Default.Visibility else Icons.Default.Code,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (showRawLog) "Friendly view" else "Raw protocol log",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Divider
             Text(
-                text = if (showRawLog) "Show friendly view" else "Show raw protocol log",
+                text = "|",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
             )
+
+            // Toggle hints
+            Row(
+                modifier = Modifier.clickable { onToggleHints() },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = if (showHints)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (showHints) "Hide hints" else "Show hints",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (showHints)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
 
 @Composable
-fun TransferEventCard(event: TransferEvent) {
+fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
     val isSend = event.type == TransferType.SEND_TCP || event.type == TransferType.SEND_UDP
     val isTcp = event.type == TransferType.SEND_TCP || event.type == TransferType.RECEIVE_TCP
     val protocolColor = if (isTcp) LogTcp else LogUdp
@@ -827,26 +906,28 @@ fun TransferEventCard(event: TransferEvent) {
                             fontWeight = FontWeight.Medium
                         )
                     }
-                    // Educational hint
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.padding(top = 2.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            text = statusInfo.hint,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 10.sp,
-                                fontStyle = FontStyle.Italic
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
+                    // Educational hint (hidden when user has disabled hints)
+                    if (showHints) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = statusInfo.hint,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 10.sp,
+                                    fontStyle = FontStyle.Italic
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
                     }
                 }
             }

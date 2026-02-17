@@ -160,7 +160,11 @@ fun ArSceneComposable(
                             floatArrayOf(peer.relativeX, peer.relativeY, peer.relativeZ),
                             floatArrayOf(0f, 0f, 0f, 1f)
                         )
-                        renderer.updatePeerVisualization(peer.peerId, peerPose, lp)
+                        // Label: prefer device model (display name); fall back to last 4 digits of peerId
+                        val peerLabel = peer.deviceModel.ifBlank {
+                            peer.peerId.toString().takeLast(4)
+                        }
+                        renderer.updatePeerVisualization(peer.peerId, peerPose, lp, peerLabel)
                     }
                 },
                 onSessionFailed = { exception ->

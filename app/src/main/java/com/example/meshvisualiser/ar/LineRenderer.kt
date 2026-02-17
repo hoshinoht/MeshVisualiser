@@ -1,13 +1,19 @@
 package com.example.meshvisualiser.ar
 
+import android.graphics.Color as AndroidColor
 import android.util.Log
+import android.util.TypedValue
+import android.view.Gravity
+import android.widget.TextView
 import androidx.compose.ui.graphics.Color
 import com.google.ar.core.Pose
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.math.Position
 import io.github.sceneview.math.Rotation
+import io.github.sceneview.math.Scale
 import io.github.sceneview.node.CylinderNode
 import io.github.sceneview.node.SphereNode
+import io.github.sceneview.node.ViewNode2
 import kotlin.math.acos
 import kotlin.math.sqrt
 
@@ -17,10 +23,12 @@ import kotlin.math.sqrt
  * Renders:
  *  - [SphereNode] at each peer's position in anchor-relative space.
  *  - [CylinderNode] between the local device and each peer as a connection line.
+ *  - [ViewNode2] text label floating above each sphere showing the peer's display name.
  *
  * SceneView 2.x verified API (from source):
  *  - CylinderNode(engine, radius, height, center, sideCount, materialInstance)
  *  - SphereNode(engine, radius, center, stacks, slices, materialInstance)
+ *  - ViewNode2(engine, windowManager, materialLoader, view, unlit) — renders an Android View in AR
  *  - sceneView.materialLoader.createColorInstance(color: androidx.compose.ui.graphics.Color, ...)
  *  - sceneView.addChildNode(node) / sceneView.removeChildNode(node)
  *  - node.position: Position (Float3)
@@ -35,9 +43,21 @@ class LineRenderer(private val sceneView: ARSceneView) {
         private const val SPHERE_RADIUS = 0.04f   // 4 cm — peer marker
         private const val LINE_RADIUS = 0.008f     // 8 mm — connection line
         private const val LINE_SIDE_COUNT = 8      // cylinder tessellation
+
+        // Label offset above sphere centre (metres)
+        private const val LABEL_Y_OFFSET = 0.08f
+        // Label scale in scene units (metres per dp)
+        private const val LABEL_SCALE = 0.002f
     }
 
-    private data class PeerNodes(val sphere: SphereNode, val cylinder: CylinderNode)
+    // WindowManager required by ViewNode2; create once and reuse across all peer labels.
+    private val viewNodeManager = ViewNode2.WindowManager(sceneView.context)
+
+    private data class PeerNodes(
+        val sphere: SphereNode,
+        val cylinder: CylinderNode,
+        val label: ViewNode2?
+    )
 
     private val peerNodes = mutableMapOf<Long, PeerNodes>()
 
@@ -47,16 +67,26 @@ class LineRenderer(private val sceneView: ARSceneView) {
      * @param peerId      Unique ID of the remote peer.
      * @param peerPose    Peer's ARCore [Pose] in anchor-local coordinates.
      * @param localPose   This device's ARCore [Pose] in anchor-local coordinates.
+     * @param label       Display name shown as a floating text label above the sphere.
+     *                    If null or blank, no label node is created.
      */
-    fun updatePeerVisualization(peerId: Long, peerPose: Pose, localPose: Pose) {
+    fun updatePeerVisualization(
+        peerId: Long,
+        peerPose: Pose,
+        localPose: Pose,
+        label: String? = null
+    ) {
         try {
-            val nodes = peerNodes[peerId] ?: createNodes(peerId)
+            val nodes = peerNodes[peerId] ?: createNodes(peerId, label)
 
             val pt = peerPose.translation   // [x, y, z]
             val lt = localPose.translation
 
             // Position sphere at peer location (anchor-relative)
             nodes.sphere.position = Position(pt[0], pt[1], pt[2])
+
+            // Position label above sphere
+            nodes.label?.position = Position(pt[0], pt[1] + LABEL_Y_OFFSET, pt[2])
 
             // Stretch cylinder from local to peer
             positionCylinder(nodes.cylinder, lt, pt)
@@ -72,8 +102,10 @@ class LineRenderer(private val sceneView: ARSceneView) {
         peerNodes.remove(peerId)?.let { nodes ->
             sceneView.removeChildNode(nodes.sphere)
             sceneView.removeChildNode(nodes.cylinder)
+            nodes.label?.let { sceneView.removeChildNode(it) }
             nodes.sphere.destroy()
             nodes.cylinder.destroy()
+            nodes.label?.destroy()
             Log.d(TAG, "Removed nodes for peer $peerId")
         }
     }
@@ -85,8 +117,8 @@ class LineRenderer(private val sceneView: ARSceneView) {
 
     // --- Private helpers ---
 
-    private fun createNodes(peerId: Long): PeerNodes {
-        Log.d(TAG, "Creating nodes for peer $peerId")
+    private fun createNodes(peerId: Long, label: String?): PeerNodes {
+        Log.d(TAG, "Creating nodes for peer $peerId (label=${label})")
 
         // MaterialLoader.createColorInstance(color: Compose Color, metallic, roughness, reflectance)
         // Source: sceneview/src/main/java/io/github/sceneview/loaders/MaterialLoader.kt
@@ -120,7 +152,38 @@ class LineRenderer(private val sceneView: ARSceneView) {
             materialInstance = lineMaterial
         ).also { sceneView.addChildNode(it) }
 
-        val nodes = PeerNodes(sphere, cylinder)
+        // ViewNode2 text label above sphere
+        // ViewNode2(engine, windowManager, materialLoader, view, unlit)
+        // Source: sceneview/src/main/java/io/github/sceneview/node/ViewNode2.kt
+        val labelNode: ViewNode2? = if (!label.isNullOrBlank()) {
+            try {
+                val textView = TextView(sceneView.context).apply {
+                    text = label
+                    setTextColor(AndroidColor.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setShadowLayer(4f, 0f, 1f, AndroidColor.BLACK)
+                    gravity = Gravity.CENTER
+                    setPadding(8, 4, 8, 4)
+                    setBackgroundColor(AndroidColor.argb(140, 0, 0, 0)) // semi-transparent black
+                }
+                ViewNode2(
+                    engine = sceneView.engine,
+                    windowManager = viewNodeManager,
+                    materialLoader = sceneView.materialLoader,
+                    view = textView,
+                    unlit = true  // labels ignore AR lighting — stay readable
+                ).also { labelNode ->
+                    // Scale: LABEL_SCALE metres per scene unit keeps the label a readable size
+                    labelNode.scale = Scale(LABEL_SCALE, LABEL_SCALE, LABEL_SCALE)
+                    sceneView.addChildNode(labelNode)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to create label node for peer $peerId: ${e.message}")
+                null
+            }
+        } else null
+
+        val nodes = PeerNodes(sphere, cylinder, labelNode)
         peerNodes[peerId] = nodes
         return nodes
     }

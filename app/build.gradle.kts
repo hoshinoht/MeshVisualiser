@@ -70,6 +70,21 @@ android {
 }
 
 dependencies {
+    constraints {
+        implementation("androidx.core:core") {
+            version {
+                strictly("1.15.0")
+            }
+            because("AGP 8.8.0 and compileSdk 35 are not compatible with androidx.core 1.17.x")
+        }
+        implementation("androidx.core:core-ktx") {
+            version {
+                strictly("1.15.0")
+            }
+            because("AGP 8.8.0 and compileSdk 35 are not compatible with androidx.core 1.17.x")
+        }
+    }
+
     // AndroidX Core
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
