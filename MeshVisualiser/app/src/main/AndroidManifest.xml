@@ -31,7 +31,7 @@
     <!-- Hardware features -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
-    <!-- AR camera feature — required=false allows install on non-AR devices -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
 
     <application
