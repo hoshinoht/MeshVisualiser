@@ -10,6 +10,9 @@ jobs:
   instrumented-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: MeshVisualiser
 
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +31,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+        working-directory: .
 
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -35,11 +39,11 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          script: ./gradlew connectedAndroidTest
+          script: cd MeshVisualiser && ./gradlew connectedAndroidTest
 
       - name: Upload instrumented test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: instrumented-test-reports
-          path: app/build/reports/androidTests/
+          path: MeshVisualiser/app/build/reports/androidTests/

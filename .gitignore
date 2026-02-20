@@ -92,6 +92,8 @@ temp/
 # Test outputs
 test-results/
 
+# Go
+server/mesh-server
 
 # claude
 /.claude

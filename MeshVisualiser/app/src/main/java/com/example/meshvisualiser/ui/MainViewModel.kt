@@ -78,7 +78,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TAG = "MainViewModel"
         private const val TCP_ACK_TIMEOUT_MS = 1_000L
         private const val TCP_MAX_RETRIES = 3
-        private const val UDP_DROP_PROBABILITY = 0.10
         private const val MAX_LOG_ENTRIES = 100
         private const val RTT_HISTORY_SIZE = 20
     }
@@ -159,6 +158,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _showRawLog = MutableStateFlow(false)
     val showRawLog: StateFlow<Boolean> = _showRawLog.asStateFlow()
 
+    // UDP packet loss probability (0.0–1.0), user-adjustable via slider
+    private val _udpDropProbability = MutableStateFlow(0.10f)
+    val udpDropProbability: StateFlow<Float> = _udpDropProbability.asStateFlow()
+
+    // Whether to show educational hints on transfer event cards
+    private val _showHints = MutableStateFlow(true)
+    val showHints: StateFlow<Boolean> = _showHints.asStateFlow()
+
     private val _selectedPeerId = MutableStateFlow<Long?>(null)
     val selectedPeerId: StateFlow<Long?> = _selectedPeerId.asStateFlow()
 
@@ -198,6 +205,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Navigation event for synchronized mesh start
     private val _navigateToMesh = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
     val navigateToMesh: SharedFlow<Unit> = _navigateToMesh.asSharedFlow()
+
+    // AR: Cloud Anchor ID received from leader via COORDINATOR message
+    private val _cloudAnchorId = MutableStateFlow<String?>(null)
+    val cloudAnchorId: StateFlow<String?> = _cloudAnchorId.asStateFlow()
 
     private var isInitialized = false
 
@@ -424,8 +435,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             MessageType.DATA_UDP -> {
-                // Simulate ~10% packet loss
-                if (Random.nextDouble() < UDP_DROP_PROBABILITY) {
+                // Simulate configurable packet loss (user-adjustable via slider)
+                if (Random.nextDouble() < _udpDropProbability.value) {
                     addLog("IN", "DROP", senderId, senderModel,
                         "Packet dropped (simulated loss)", message.toBytes().size)
                     addTransferEvent(TransferEvent(
@@ -489,6 +500,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleRawLog() {
         _showRawLog.update { !it }
+    }
+
+    /** Set UDP packet loss probability from 0.0 to 1.0. */
+    fun setUdpDropProbability(probability: Float) {
+        _udpDropProbability.value = probability.coerceIn(0f, 1f)
+    }
+
+    fun toggleHints() {
+        _showHints.update { !it }
     }
 
     private fun findPeerByPeerId(peerId: Long): PeerInfo? {
@@ -617,6 +637,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isLeader.value = false
     }
 
+    // --- AR: Cloud Anchors & Pose ---
+
+    /**
+     * Called by [com.example.meshvisualiser.ar.ArSceneComposable] after the leader successfully
+     * hosts a Cloud Anchor. Broadcasts the anchor ID to all peers via COORDINATOR message so they
+     * can resolve it.
+     *
+     * The COORDINATOR message's [MeshMessage.coordinator] already accepts a cloudAnchorId string.
+     */
+    fun broadcastCloudAnchorId(cloudAnchorId: String) {
+        if (!isInitialized) return
+        Log.d(TAG, "Broadcasting cloud anchor ID: $cloudAnchorId")
+        nearbyManager.broadcastMessage(MeshMessage.coordinator(localId, cloudAnchorId))
+    }
+
+    /**
+     * Called by [com.example.meshvisualiser.ar.ArSceneComposable] to broadcast this device's
+     * AR pose to all mesh peers via [com.example.meshvisualiser.models.MessageType.POSE_UPDATE].
+     */
+    fun broadcastPose(x: Float, y: Float, z: Float, qx: Float, qy: Float, qz: Float, qw: Float) {
+        if (!isInitialized) return
+        meshManager.broadcastPose(x, y, z, qx, qy, qz, qw)
+    }
+
     fun startMeshFromLobby() {
         // Broadcast START_MESH to all connected peers so they transition too
         nearbyManager.broadcastMessage(MeshMessage.startMesh(localId))
@@ -649,6 +693,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         onDataReceived(endpointId, message)
                     MessageType.START_MESH ->
                         beginMesh()
+                    MessageType.COORDINATOR -> {
+                        // If the COORDINATOR message carries a non-empty cloud anchor ID,
+                        // surface it via _cloudAnchorId so ArSceneComposable can resolve it.
+                        if (message.data.isNotBlank()) {
+                            _cloudAnchorId.value = message.data
+                        }
+                        // Always forward to MeshManager for leader election tracking
+                        meshManager.onMessageReceived(endpointId, message)
+                    }
                     else ->
                         meshManager.onMessageReceived(endpointId, message)
                 }
