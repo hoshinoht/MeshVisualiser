@@ -97,8 +97,11 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
     val transmissionMode by viewModel.transmissionMode.collectAsStateWithLifecycle()
     val csmaState by viewModel.csmaState.collectAsStateWithLifecycle()
     val packetAnimEvents by viewModel.packetAnimEvents.collectAsStateWithLifecycle()
+    val isTcpBusy by viewModel.isTcpBusy.collectAsStateWithLifecycle()
     val displayName by viewModel.displayName.collectAsStateWithLifecycle()
     val udpDropProbability by viewModel.udpDropProbability.collectAsStateWithLifecycle()
+    val tcpDropProbability by viewModel.tcpDropProbability.collectAsStateWithLifecycle()
+    val tcpAckTimeoutMs by viewModel.tcpAckTimeoutMs.collectAsStateWithLifecycle()
     val showHints by viewModel.showHints.collectAsStateWithLifecycle()
 
     var showDataSheet by remember { mutableStateOf(false) }
@@ -265,7 +268,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
 
                             FilledTonalButton(
                                 onClick = { viewModel.sendTcpData() },
-                                enabled = selectedPeerId != null,
+                                enabled = selectedPeerId != null && !isTcpBusy,
                                 colors = ButtonDefaults.filledTonalButtonColors(
                                     containerColor = LogTcp.copy(alpha = 0.3f)
                                 ),
@@ -309,12 +312,17 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {}) {
                 onToggleHints = { viewModel.toggleHints() },
                 udpDropProbability = udpDropProbability,
                 onDropProbabilityChanged = { viewModel.setUdpDropProbability(it) },
+                tcpDropProbability = tcpDropProbability,
+                onTcpDropProbabilityChanged = { viewModel.setTcpDropProbability(it) },
+                tcpAckTimeoutMs = tcpAckTimeoutMs,
+                onTcpAckTimeoutChanged = { viewModel.setTcpAckTimeoutMs(it) },
                 selectedPeerId = selectedPeerId,
                 peers = peers,
                 transmissionMode = transmissionMode,
                 onModeChanged = { viewModel.setTransmissionMode(it) },
                 onSendTcp = { viewModel.sendTcpData() },
-                onSendUdp = { viewModel.sendUdpData() }
+                onSendUdp = { viewModel.sendUdpData() },
+                isTcpBusy = isTcpBusy
             )
         }
     }
@@ -464,6 +472,7 @@ fun DataExchangePeek(
     selectedPeerId: Long?,
     onSendTcp: () -> Unit,
     onSendUdp: () -> Unit,
+    isTcpBusy: Boolean = false,
     onExpand: () -> Unit
 ) {
     Column(modifier = Modifier.padding(12.dp)) {
@@ -488,7 +497,7 @@ fun DataExchangePeek(
             )
             FilledTonalButton(
                 onClick = onSendTcp,
-                enabled = selectedPeerId != null,
+                enabled = selectedPeerId != null && !isTcpBusy,
                 colors = ButtonDefaults.filledTonalButtonColors(
                     containerColor = LogTcp.copy(alpha = 0.3f)
                 ),
@@ -531,12 +540,17 @@ fun DataExchangePanel(
     onToggleHints: () -> Unit,
     udpDropProbability: Float,
     onDropProbabilityChanged: (Float) -> Unit,
+    tcpDropProbability: Float,
+    onTcpDropProbabilityChanged: (Float) -> Unit,
+    tcpAckTimeoutMs: Long,
+    onTcpAckTimeoutChanged: (Long) -> Unit,
     selectedPeerId: Long?,
     peers: Map<String, PeerInfo>,
     transmissionMode: TransmissionMode,
     onModeChanged: (TransmissionMode) -> Unit,
     onSendTcp: () -> Unit,
     onSendUdp: () -> Unit,
+    isTcpBusy: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -577,7 +591,7 @@ fun DataExchangePanel(
             )
             FilledTonalButton(
                 onClick = onSendTcp,
-                enabled = selectedPeerId != null,
+                enabled = selectedPeerId != null && !isTcpBusy,
                 colors = ButtonDefaults.filledTonalButtonColors(
                     containerColor = LogTcp.copy(alpha = 0.3f)
                 ),
@@ -636,6 +650,70 @@ fun DataExchangePanel(
                     thumbColor = LogUdp,
                     activeTrackColor = LogUdp,
                     inactiveTrackColor = LogUdp.copy(alpha = 0.2f)
+                )
+            )
+        }
+
+        // TCP packet loss slider (blue)
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "TCP Packet Loss",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${(tcpDropProbability * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF2196F3),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Slider(
+                value = tcpDropProbability,
+                onValueChange = onTcpDropProbabilityChanged,
+                valueRange = 0f..1f,
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color(0xFF2196F3),
+                    activeTrackColor = Color(0xFF2196F3),
+                    inactiveTrackColor = Color(0xFF2196F3).copy(alpha = 0.2f)
+                )
+            )
+        }
+
+        // TCP ACK timeout slider (gray)
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "TCP ACK Timeout",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "${tcpAckTimeoutMs - 3000}ms",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Slider(
+                value = tcpAckTimeoutMs.toFloat(),
+                onValueChange = { onTcpAckTimeoutChanged(it.toLong()) },
+                valueRange = 3000f..10000f,
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.Gray,
+                    activeTrackColor = Color.Gray,
+                    inactiveTrackColor = Color.Gray.copy(alpha = 0.2f)
                 )
             )
         }

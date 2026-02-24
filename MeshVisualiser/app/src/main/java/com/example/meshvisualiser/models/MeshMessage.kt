@@ -62,6 +62,11 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
             return MeshMessage(MessageType.START_MESH.value, localId)
         }
 
+        /** Sync simulation config to all peers. Data format: "udpDrop|tcpDrop|tcpTimeoutMs" */
+        fun configSync(localId: Long, udpDrop: Float, tcpDrop: Float, tcpTimeoutMs: Long): MeshMessage {
+            return MeshMessage(MessageType.CONFIG_SYNC.value, localId, "$udpDrop|$tcpDrop|$tcpTimeoutMs")
+        }
+
         fun poseUpdate(
             localId: Long,
             x: Float,

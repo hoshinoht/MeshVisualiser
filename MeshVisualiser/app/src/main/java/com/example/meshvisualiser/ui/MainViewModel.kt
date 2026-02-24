@@ -76,7 +76,6 @@ enum class ConnectionFlowState { IDLE, JOINING, IN_LOBBY, STARTING }
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val TAG = "MainViewModel"
-        private const val TCP_ACK_TIMEOUT_MS = 1_000L
         private const val TCP_MAX_RETRIES = 3
         private const val MAX_LOG_ENTRIES = 100
         private const val RTT_HISTORY_SIZE = 20
@@ -162,6 +161,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _udpDropProbability = MutableStateFlow(0.10f)
     val udpDropProbability: StateFlow<Float> = _udpDropProbability.asStateFlow()
 
+    private val _tcpDropProbability = MutableStateFlow(0.20f)
+    val tcpDropProbability: StateFlow<Float> = _tcpDropProbability.asStateFlow()
+
+    // Adjustable at runtime — how long sender waits for ACK before retrying
+    // Must be greater than the receiver's 1500ms ACK delay + Nearby travel time
+    private val _tcpAckTimeoutMs = MutableStateFlow(4000L)
+    val tcpAckTimeoutMs: StateFlow<Long> = _tcpAckTimeoutMs.asStateFlow()
+
     // Whether to show educational hints on transfer event cards
     private val _showHints = MutableStateFlow(true)
     val showHints: StateFlow<Boolean> = _showHints.asStateFlow()
@@ -173,6 +180,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val pendingAcks = mutableMapOf<Int, Job>()
     private val seqToTransferEventId = mutableMapOf<Int, Long>()
     private var nextTransferEventId = 1L
+
+    // True while any TCP session is in flight — used to disable the TCP button
+    private val _isTcpBusy = MutableStateFlow(false)
+    val isTcpBusy: StateFlow<Boolean> = _isTcpBusy.asStateFlow()
 
     // RTT tracking
     private val pendingSendTimestamps = mutableMapOf<Int, Long>() // seqNum → sendTimeMs
@@ -296,43 +307,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun doSendTcp(peer: PeerInfo, targetId: Long, payload: String, seq: Int) {
         val message = MeshMessage.dataTcp(localId, payload, seq)
-
-        // Store send timestamp for RTT
-        pendingSendTimestamps[seq] = System.currentTimeMillis()
-
-        nearbyManager.sendMessage(peer.endpointId, message)
-        addLog("OUT", "TCP", targetId, peer.deviceModel, payload, message.toBytes().size, seq)
-
-        // Emit transfer event
         val eventId = nextTransferEventId++
         seqToTransferEventId[seq] = eventId
+
+        // Send immediately — sender sees TCP go out, that's all
+        addLog("OUT", "TCP", targetId, peer.deviceModel, payload, message.toBytes().size, seq)
         addTransferEvent(TransferEvent(
             id = eventId, timestamp = System.currentTimeMillis(),
             type = TransferType.SEND_TCP, peerModel = peer.deviceModel,
             peerId = targetId, status = TransferStatus.IN_PROGRESS
         ))
-
         triggerPacketAnimation("TCP", localId, targetId)
+        val firstSendTime = System.currentTimeMillis()
+        pendingSendTimestamps[seq] = firstSendTime
+        nearbyManager.sendMessage(peer.endpointId, message)
+        _isTcpBusy.value = true
 
-        // Start ACK timeout with retransmit
+        // Sender only knows no ACK arrived — it does NOT know the packet was dropped
         val job = viewModelScope.launch {
             for (retry in 1..TCP_MAX_RETRIES) {
-                delay(TCP_ACK_TIMEOUT_MS)
-                if (!pendingAcks.containsKey(seq)) return@launch // ACK received
-                addLog("OUT", "RETRY", targetId, peer.deviceModel,
-                    "Retransmit #$retry for seq $seq", message.toBytes().size, seq)
+                delay(_tcpAckTimeoutMs.value)
+                if (!pendingAcks.containsKey(seq)) return@launch
+                addLog("OUT", "RETRY", targetId, peer.deviceModel, "Retransmit #$retry seq $seq", message.toBytes().size, seq)
                 updateTransferEvent(eventId) { it.copy(status = TransferStatus.RETRYING, retryCount = retry) }
-                nearbyManager.sendMessage(peer.endpointId, message)
                 triggerPacketAnimation("TCP", localId, targetId)
+                // Keep firstSendTime so RTT reflects total time across all attempts
+                pendingSendTimestamps[seq] = firstSendTime
+                nearbyManager.sendMessage(peer.endpointId, message)
             }
-            // All retries exhausted
-            addLog("OUT", "DROP", targetId, peer.deviceModel,
-                "TCP seq $seq failed after $TCP_MAX_RETRIES retries", 0, seq)
+            // All retries sent — wait one final timeout for the last ACK before giving up
+            delay(_tcpAckTimeoutMs.value)
+            if (!pendingAcks.containsKey(seq)) return@launch
+            // All retries exhausted — flag as failed
+            addLog("OUT", "DROP", targetId, peer.deviceModel, "TCP seq $seq — no ACK after $TCP_MAX_RETRIES retries", 0, seq)
             updateTransferEvent(eventId) { it.copy(status = TransferStatus.FAILED, retryCount = TCP_MAX_RETRIES) }
-            triggerPacketAnimation("DROP", localId, targetId)
             pendingAcks.remove(seq)
             pendingSendTimestamps.remove(seq)
             seqToTransferEventId.remove(seq)
+            _isTcpBusy.value = false
         }
         pendingAcks[seq] = job
     }
@@ -411,14 +423,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     seqToTransferEventId.remove(ackSeq)?.let { eventId ->
                         updateTransferEvent(eventId) { it.copy(status = TransferStatus.DELIVERED, rttMs = rtt) }
                     }
+                    _isTcpBusy.value = false
 
                     addLog("IN", "ACK", senderId, senderModel,
                         "ACK for seq $ackSeq", message.toBytes().size, ackSeq, rtt)
                     triggerPacketAnimation("ACK", senderId, localId)
                 } else if (parts.size >= 3 && parts[0] == "seq") {
-                    // This is data — log it and send ACK back
+                    // This is data
                     val seq = parts[1].toIntOrNull() ?: return
                     val payload = parts[2]
+
+                    // Simulate packet loss — only the receiver sees the drop; sender just times out
+                    if (Random.nextFloat() < _tcpDropProbability.value) {
+                        addLog("IN", "DROP", senderId, senderModel,
+                            "Packet dropped (simulated loss)", message.toBytes().size, seq)
+                        triggerPacketAnimation("DROP", senderId, localId)
+                        return // No ACK sent — sender will retry after TCP_TIMEOUT_MS
+                    }
+
                     addLog("IN", "TCP", senderId, senderModel,
                         payload, message.toBytes().size, seq)
                     addTransferEvent(TransferEvent(
@@ -427,11 +449,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         peerId = senderId, status = TransferStatus.DELIVERED
                     ))
                     triggerPacketAnimation("TCP", senderId, localId)
-                    // Send ACK
-                    nearbyManager.sendMessage(endpointId, MeshMessage.dataTcpAck(localId, seq))
-                    addLog("OUT", "ACK", senderId, senderModel,
-                        "ACK for seq $seq", 0, seq)
-                    triggerPacketAnimation("ACK", localId, senderId)
+                    // Wait for TCP animation to finish arriving, then ACK floats back at normal speed
+                    val ackEndpointId = endpointId
+                    viewModelScope.launch {
+                        delay(1500L)
+                        nearbyManager.sendMessage(ackEndpointId, MeshMessage.dataTcpAck(localId, seq))
+                        addLog("OUT", "ACK", senderId, senderModel, "ACK for seq $seq", 0, seq)
+                        triggerPacketAnimation("ACK", localId, senderId)
+                    }
                 }
             }
             MessageType.DATA_UDP -> {
@@ -505,6 +530,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Set UDP packet loss probability from 0.0 to 1.0. */
     fun setUdpDropProbability(probability: Float) {
         _udpDropProbability.value = probability.coerceIn(0f, 1f)
+        broadcastConfigSync()
+    }
+
+    /** Set TCP packet loss probability from 0.0 to 1.0. */
+    fun setTcpDropProbability(probability: Float) {
+        _tcpDropProbability.value = probability.coerceIn(0f, 1f)
+        broadcastConfigSync()
+    }
+
+    /** Set how long (ms) the sender waits for an ACK before retrying. */
+    fun setTcpAckTimeoutMs(timeoutMs: Long) {
+        _tcpAckTimeoutMs.value = timeoutMs.coerceAtLeast(3000L)
+        broadcastConfigSync()
+    }
+
+    private fun broadcastConfigSync() {
+        if (!isInitialized) return
+        nearbyManager.broadcastMessage(
+            MeshMessage.configSync(localId, _udpDropProbability.value, _tcpDropProbability.value, _tcpAckTimeoutMs.value)
+        )
     }
 
     fun toggleHints() {
@@ -693,6 +738,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         onDataReceived(endpointId, message)
                     MessageType.START_MESH ->
                         beginMesh()
+                    MessageType.CONFIG_SYNC -> {
+                        // Apply config from another device — no re-broadcast to avoid loops
+                        val parts = message.data.split("|")
+                        if (parts.size == 3) {
+                            parts[0].toFloatOrNull()?.let { _udpDropProbability.value = it.coerceIn(0f, 1f) }
+                            parts[1].toFloatOrNull()?.let { _tcpDropProbability.value = it.coerceIn(0f, 1f) }
+                            parts[2].toLongOrNull()?.let { _tcpAckTimeoutMs.value = it.coerceAtLeast(3000L) }
+                        }
+                    }
                     MessageType.COORDINATOR -> {
                         // If the COORDINATOR message carries a non-empty cloud anchor ID,
                         // surface it via _cloudAnchorId so ArSceneComposable can resolve it.

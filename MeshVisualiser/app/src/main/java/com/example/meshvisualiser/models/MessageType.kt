@@ -29,7 +29,10 @@ enum class MessageType(val value: Int) {
     DATA_UDP(7),
 
     /** Signal all peers to start mesh formation */
-    START_MESH(8);
+    START_MESH(8),
+
+    /** Sync simulation config (UDP/TCP drop %, TCP ACK timeout) to all peers */
+    CONFIG_SYNC(9);
 
     companion object {
         fun fromValue(value: Int): MessageType? = entries.find { it.value == value }
