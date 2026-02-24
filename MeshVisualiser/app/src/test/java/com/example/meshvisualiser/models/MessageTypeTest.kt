@@ -16,6 +16,7 @@ class MessageTypeTest {
         assertEquals(MessageType.DATA_TCP, MessageType.fromValue(6))
         assertEquals(MessageType.DATA_UDP, MessageType.fromValue(7))
         assertEquals(MessageType.START_MESH, MessageType.fromValue(8))
+        assertEquals(MessageType.CONFIG_SYNC, MessageType.fromValue(9))
     }
 
     @Test
@@ -32,8 +33,8 @@ class MessageTypeTest {
     }
 
     @Test
-    fun `value assignments match spec 0 through 8`() {
-        val expected = (0..8).toList()
+    fun `value assignments match spec 0 through 9`() {
+        val expected = (0..9).toList()
         val actual = MessageType.entries.map { it.value }.sorted()
         assertEquals(expected, actual)
     }
