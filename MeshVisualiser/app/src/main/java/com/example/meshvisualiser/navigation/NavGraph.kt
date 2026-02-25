@@ -7,6 +7,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.meshvisualiser.ui.ArScreen
 import com.example.meshvisualiser.ui.MainScreen
 import com.example.meshvisualiser.ui.MainViewModel
 import com.example.meshvisualiser.ui.screens.ConnectionScreen
@@ -16,7 +17,10 @@ import com.example.meshvisualiser.ui.screens.QuizScreen
 @Composable
 fun MeshNavHost(
     viewModel: MainViewModel,
-    startDestination: String
+    startDestination: String,
+    cameraPermissionGranted: Boolean,
+    onRequestCameraPermission: () -> Unit,
+    onCheckArCoreAvailable: (onAvailable: (Boolean) -> Unit) -> Unit
 ) {
     val navController = rememberNavController()
 
@@ -75,8 +79,26 @@ fun MeshNavHost(
         composable(Routes.MESH) {
             MainScreen(
                 viewModel = viewModel,
-                onNavigateToQuiz = { navController.navigate(Routes.QUIZ) }
+                onNavigateToQuiz = { navController.navigate(Routes.QUIZ) },
+                onNavigateToAr = {
+                    // 1. Check camera permission
+                    if (!cameraPermissionGranted) {
+                        onRequestCameraPermission()
+                        return@MainScreen
+                    }
+                    // 2. Check ARCore is installed and up to date
+                    onCheckArCoreAvailable { available ->
+                        if (available) navController.navigate(Routes.AR)
+                    }
+                }
             )
+        }
+
+        composable("ar") {
+           ArScreen(
+               viewModel = viewModel,
+               onBack = { navController.popBackStack() }
+           )
         }
 
         composable(Routes.QUIZ) {
