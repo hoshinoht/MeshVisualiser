@@ -18,9 +18,9 @@ import com.google.ar.core.Session
  * the hosted cloud anchor ID through your mesh messaging layer.
  */
 class CloudAnchorManager(
-    private val onAnchorHosted:   (cloudAnchorId: String, anchor: Anchor) -> Unit,
+    private val onAnchorHosted: (cloudAnchorId: String, anchor: Anchor) -> Unit,
     private val onAnchorResolved: (anchor: Anchor) -> Unit,
-    private val onError:          (message: String) -> Unit
+    private val onError: (message: String) -> Unit
 ) {
     companion object {
         private const val TAG = "CloudAnchorManager"

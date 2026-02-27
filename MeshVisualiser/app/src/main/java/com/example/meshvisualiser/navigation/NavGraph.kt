@@ -7,7 +7,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.meshvisualiser.ui.ArScreen
+import com.example.meshvisualiser.ui.screens.ArScreen
 import com.example.meshvisualiser.ui.MainScreen
 import com.example.meshvisualiser.ui.MainViewModel
 import com.example.meshvisualiser.ui.screens.ConnectionScreen

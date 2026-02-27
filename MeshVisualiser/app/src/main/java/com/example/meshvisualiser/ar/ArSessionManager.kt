@@ -9,24 +9,12 @@ import com.google.ar.core.TrackingState
 import com.example.meshvisualiser.models.PeerInfo
 
 private const val TAG = "ArSessionManager"
-
-/**
- * Manages the shared world anchor and one-shot node placement.
- *
- * Coordinate system:
- *   - The world anchor is placed 1m in front of the camera on startup.
- *   - All nodes are placed in **world space** (absolute ARCore world coordinates).
- *   - Peer relative coords (relativeX/Y/Z) are anchor-local offsets; we convert them
- *     to world space by adding the anchor's world translation before passing to LineRenderer.
- *
- * Call [reset] during teardown after [LineRenderer.clearAll].
- */
 class ArSessionManager(
-    private val lineRenderer:    LineRenderer,
-    private val poseManager:     PoseManager,
+    private val nodeManager: ArNodeManager,
+    private val poseManager: PoseManager,
     private val localDeviceName: String
 ) {
-    private var worldAnchor:     Anchor?  = null
+    private var worldAnchor: Anchor?  = null
     private var anchorInitiated: Boolean  = false
 
     /** World-space position of the local device node (set after anchor placement). */
@@ -34,31 +22,30 @@ class ArSessionManager(
         private set
 
     fun onSessionUpdated(
-        session:     Session,
-        frame:       Frame,
-        getPeers:    () -> Map<String, PeerInfo>,
-        getSelected: () -> Long?
+        session: Session,
+        frame: Frame,
+        getPeers: () -> Map<String, PeerInfo>
     ) {
         val camera = frame.camera
         if (camera.trackingState != TrackingState.TRACKING) return
 
-        // ── One-shot anchor + local sphere placement ──────────────────────────
+        // One-shot anchor + local sphere placement only ONCE
         if (!anchorInitiated) {
             anchorInitiated = true
             try {
-                val cp  = camera.pose
+                val cp = camera.pose
                 val fwd = cp.zAxis
                 // Place anchor 1m in front of the camera
                 val wx = cp.tx() - fwd[0]
                 val wy = cp.ty() - fwd[1]
                 val wz = cp.tz() - fwd[2]
 
-                worldAnchor   = session.createAnchor(Pose.makeTranslation(wx, wy, wz))
+                worldAnchor = session.createAnchor(Pose.makeTranslation(wx, wy, wz))
                 localWorldPos = Triple(wx, wy, wz)
                 poseManager.setSharedAnchor(worldAnchor!!)
 
                 // Place the local sphere at the anchor position (world space)
-                lineRenderer.placeLocalNode(wx, wy, wz, localDeviceName)
+                nodeManager.placeLocalNode(wx, wy, wz, localDeviceName)
 
                 Log.d(TAG, "Anchor + local node at ($wx, $wy, $wz)")
             } catch (e: Exception) {
@@ -72,19 +59,19 @@ class ArSessionManager(
         if (anchor.trackingState != TrackingState.TRACKING) return
 
         poseManager.updatePose(camera)
-        lineRenderer.updateLabelOrientations()
+        nodeManager.updateLabelOrientations()
 
-        val peers      = getPeers()
-        // Anchor's current world-space translation — used to convert anchor-local peer
+        val peers = getPeers()
+        // Anchor's current world-space translation, used to convert anchor-local peer
         // coords into world space so nodes align with the spheres.
         val anchorPose = anchor.pose
         val ax = anchorPose.tx()
         val ay = anchorPose.ty()
         val az = anchorPose.tz()
 
-        // ── Place peer nodes — once only ──────────────────────────────────────
+        //  Place peer nodes - once only
         peers.values.filter { it.hasValidPeerId }.forEach { peer ->
-            if (lineRenderer.hasPeer(peer.peerId)) return@forEach
+            if (nodeManager.hasPeer(peer.peerId)) return@forEach
 
             val hasPose = peer.relativeX != 0f || peer.relativeY != 0f || peer.relativeZ != 0f
             if (!hasPose) return@forEach
@@ -95,25 +82,25 @@ class ArSessionManager(
             val wz = az + peer.relativeZ
 
             val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
-            lineRenderer.addPeer(peerId = peer.peerId, wx = wx, wy = wy, wz = wz, label = label)
+            nodeManager.addPeer(peerId = peer.peerId, wx = wx, wy = wy, wz = wz, label = label)
             Log.d(TAG, "Placed peer ${peer.peerId} at world ($wx, $wy, $wz)")
         }
 
-        // ── Remove disconnected peers ─────────────────────────────────────────
+        // Remove disconnected peers
         val activeIds = peers.values.filter { it.hasValidPeerId }.map { it.peerId }.toSet()
-        lineRenderer.peerIds()
+        nodeManager.peerIds()
             .filter { it !in activeIds }
             .forEach {
-                lineRenderer.removePeer(it)
+                nodeManager.removePeer(it)
                 Log.d(TAG, "Removed disconnected peer $it")
             }
     }
 
     fun reset() {
         runCatching { worldAnchor?.detach() }
-        worldAnchor     = null
+        worldAnchor = null
         anchorInitiated = false
-        localWorldPos   = null
+        localWorldPos = null
         Log.d(TAG, "Session state reset")
     }
 }

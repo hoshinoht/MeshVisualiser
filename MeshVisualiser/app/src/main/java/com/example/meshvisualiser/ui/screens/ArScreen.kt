@@ -1,5 +1,7 @@
-package com.example.meshvisualiser.ui
+package com.example.meshvisualiser.ui.screens
 
+import android.content.Context
+import android.os.Build
 import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -8,43 +10,48 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.meshvisualiser.ar.ArSessionManager
-import com.example.meshvisualiser.ar.LineRenderer
+import com.example.meshvisualiser.ar.ArNodeManager
 import com.example.meshvisualiser.ar.PoseManager
 import com.example.meshvisualiser.models.PeerInfo
+import com.example.meshvisualiser.ui.MainViewModel
+import com.example.meshvisualiser.ui.theme.COLOR_ACK
+import com.example.meshvisualiser.ui.theme.COLOR_DROP
+import com.example.meshvisualiser.ui.theme.COLOR_TCP
+import com.example.meshvisualiser.ui.theme.COLOR_UDP
 import com.google.ar.core.Config
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.ar.node.AnchorNode
 import io.github.sceneview.node.SphereNode
 import com.google.android.filament.MaterialInstance
+import com.google.ar.core.Frame
 import com.google.ar.core.Pose
-import com.google.ar.core.TrackingState
+import com.google.ar.core.Session
 import dev.romainguy.kotlin.math.Float3
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val TAG = "ArScreen"
 
-// ── ManagedARSceneView ────────────────────────────────────────────────────────
-
 /**
  * Fires [onBeforeDetach] before the base class tears down Filament resources,
  * giving a safe window to destroy all AR nodes.
  */
 private class ManagedARSceneView(
-    context: android.content.Context,
-    sessionConfiguration: ((com.google.ar.core.Session, Config) -> Unit)? = null,
-    onSessionCreated:     ((com.google.ar.core.Session) -> Unit)? = null,
-    onSessionUpdated:     ((com.google.ar.core.Session, com.google.ar.core.Frame) -> Unit)? = null,
-    onSessionFailed:      ((Exception) -> Unit)? = null,
+    context: Context,
+    sessionConfiguration: ((Session, Config) -> Unit)? = null,
+    onSessionCreated: ((Session) -> Unit)? = null,
+    onSessionUpdated: ((Session, Frame) -> Unit)? = null,
+    onSessionFailed: ((Exception) -> Unit)? = null,
 ) : ARSceneView(
-    context              = context,
+    context = context,
     sessionConfiguration = sessionConfiguration,
-    onSessionCreated     = onSessionCreated,
-    onSessionUpdated     = onSessionUpdated,
-    onSessionFailed      = onSessionFailed,
+    onSessionCreated = onSessionCreated,
+    onSessionUpdated = onSessionUpdated,
+    onSessionFailed = onSessionFailed,
 ) {
     var onBeforeDetach: ((ManagedARSceneView) -> Unit)? = null
 
@@ -56,17 +63,15 @@ private class ManagedARSceneView(
     }
 }
 
-// ── ArHud ─────────────────────────────────────────────────────────────────────
-
-/** Fully isolated composable — its recomposition never touches the AndroidView. */
+// Fully isolated composable recomposition never touches the AndroidView
 @Composable
 private fun ArHud(
-    peers:          Map<String, PeerInfo>,
+    peers: Map<String, PeerInfo>,
     selectedPeerId: Long?,
-    onSelectPeer:   (Long?) -> Unit,
-    onSendTcp:      () -> Unit,
-    onSendUdp:      () -> Unit,
-    onBack:         () -> Unit
+    onSelectPeer: (Long?) -> Unit,
+    onSendTcp: () -> Unit,
+    onSendUdp: () -> Unit,
+    onBack: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -85,9 +90,9 @@ private fun ArHud(
                 ) {
                     Text(
                         "No peers connected",
-                        style    = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(12.dp),
-                        color    = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             } else {
@@ -97,9 +102,9 @@ private fun ArHud(
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Row(
-                        modifier              = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment     = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             "Target:",
@@ -110,8 +115,8 @@ private fun ArHud(
                             val isSelected = peer.peerId == selectedPeerId
                             FilterChip(
                                 selected = isSelected,
-                                onClick  = { onSelectPeer(if (isSelected) null else peer.peerId) },
-                                label    = {
+                                onClick = { onSelectPeer(if (isSelected) null else peer.peerId) },
+                                label = {
                                     Text(
                                         peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) },
                                         style = MaterialTheme.typography.labelSmall
@@ -128,13 +133,13 @@ private fun ArHud(
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Row(
-                        modifier              = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FilledTonalButton(
                             onClick = onSendTcp,
                             enabled = selectedPeerId != null,
-                            colors  = ButtonDefaults.filledTonalButtonColors(
+                            colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = COLOR_TCP.copy(alpha = 0.3f)
                             )
                         ) { Text("Send TCP", color = COLOR_TCP, style = MaterialTheme.typography.labelSmall) }
@@ -142,7 +147,7 @@ private fun ArHud(
                         FilledTonalButton(
                             onClick = onSendUdp,
                             enabled = selectedPeerId != null,
-                            colors  = ButtonDefaults.filledTonalButtonColors(
+                            colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = COLOR_UDP.copy(alpha = 0.3f)
                             )
                         ) { Text("Send UDP", color = COLOR_UDP, style = MaterialTheme.typography.labelSmall) }
@@ -152,84 +157,81 @@ private fun ArHud(
         }
 
         FloatingActionButton(
-            onClick        = onBack,
-            modifier       = Modifier.align(Alignment.BottomStart).padding(24.dp),
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.BottomStart).padding(24.dp),
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-            contentColor   = MaterialTheme.colorScheme.onSurface
+            contentColor = MaterialTheme.colorScheme.onSurface
         ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
     }
 }
 
-// ── ArScreen ──────────────────────────────────────────────────────────────────
-
 @Composable
 fun ArScreen(
     viewModel: MainViewModel,
-    onBack:    () -> Unit
+    onBack: () -> Unit
 ) {
-    val peers          by viewModel.peers.collectAsState()
+    val peers by viewModel.peers.collectAsState()
     val selectedPeerId by viewModel.selectedPeerId.collectAsState()
-    val packetEvents   by viewModel.packetAnimEvents.collectAsState()
-    val displayName    by viewModel.displayName.collectAsState()
+    val packetEvents by viewModel.packetAnimEvents.collectAsState()
+    val displayName by viewModel.displayName.collectAsState()
 
     // rememberUpdatedState so lambdas inside AndroidView always read latest values
-    val currentPeers      by rememberUpdatedState(peers)
-    val currentSelectedId by rememberUpdatedState(selectedPeerId)
+    val currentPeers by rememberUpdatedState(peers)
 
-    val coroutineScope   = rememberCoroutineScope()
-    val isDisposed       = remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val isDisposed = remember { mutableStateOf(false) }
 
     // Manager refs — survive recomposition, initialised in AndroidView factory
-    val sceneViewRef      = remember { arrayOfNulls<ARSceneView>(1) }
-    val lineRendererRef   = remember { arrayOfNulls<LineRenderer>(1) }
+    val sceneViewRef = remember { arrayOfNulls<ARSceneView>(1) }
+    val nodeManagerRef = remember { arrayOfNulls<ArNodeManager>(1) }
     val sessionManagerRef = remember { arrayOfNulls<ArSessionManager>(1) }
-    val animatedEventIds  = remember { mutableSetOf<Long>() }
-    val allMaterials      = remember { mutableListOf<MaterialInstance>() }
-    val packetNodes       = remember { mutableListOf<AnchorNode>() }
+    val animatedEventIds = remember { mutableSetOf<Long>() }
+    val allMaterials = remember { mutableListOf<MaterialInstance>() }
+    val packetNodes = remember { mutableListOf<AnchorNode>() }
 
     DisposableEffect(Unit) {
         onDispose { isDisposed.value = true }
     }
 
-    // ── Packet animations ─────────────────────────────────────────────────────
+    //  Packet animations
     LaunchedEffect(packetEvents) {
         if (isDisposed.value) return@LaunchedEffect
-        val lr       = lineRendererRef[0]  ?: return@LaunchedEffect
-        val sm       = sessionManagerRef[0] ?: return@LaunchedEffect
-        val localPos = sm.localWorldPos    ?: return@LaunchedEffect
+        val nm = nodeManagerRef[0] ?: return@LaunchedEffect
+        val sm = sessionManagerRef[0] ?: return@LaunchedEffect
+        val localPos = sm.localWorldPos ?: return@LaunchedEffect
 
         packetEvents.forEach { event ->
             if (event.id in animatedEventIds) return@forEach
             animatedEventIds.add(event.id)
 
             val fromPos = if (event.fromId == viewModel.localId) localPos
-            else lr.getPeerPosition(event.fromId)
+            else nm.getPeerPosition(event.fromId)
                 ?: run { viewModel.consumePacketEvent(event.id); return@forEach }
 
             val toPos   = if (event.toId == viewModel.localId) localPos
-            else lr.getPeerPosition(event.toId)
+            else nm.getPeerPosition(event.toId)
                 ?: run { viewModel.consumePacketEvent(event.id); return@forEach }
 
             val color = when (event.type) {
-                "TCP"  -> COLOR_TCP
-                "UDP"  -> COLOR_UDP
-                "ACK"  -> COLOR_ACK
+                "TCP" -> COLOR_TCP
+                "UDP" -> COLOR_UDP
+                "ACK" -> COLOR_ACK
                 "DROP" -> COLOR_DROP
-                else   -> COLOR_TCP
+                else -> COLOR_TCP
             }
 
             coroutineScope.launch {
                 if (!isDisposed.value) {
                     animatePacket(
-                        sv           = sceneViewRef[0] ?: return@launch,
-                        fromPos    = fromPos,
-                        toPos      = toPos,
-                        color      = color,
-                        isDrop     = event.type == "DROP",
+                        sv = sceneViewRef[0] ?: return@launch,
+                        fromPos = fromPos,
+                        toPos = toPos,
+                        color = color,
+                        isDrop = event.type == "DROP",
                         durationMs = 600L,
                         isDisposed = isDisposed,
                         allMaterials = allMaterials,
-                        packetNodes  = packetNodes
+                        packetNodes = packetNodes
                     )
                 }
                 viewModel.consumePacketEvent(event.id)
@@ -237,13 +239,13 @@ fun ArScreen(
         }
     }
 
-    // ── Layout ────────────────────────────────────────────────────────────────
+    // Layout
     Box(modifier = Modifier.fillMaxSize()) {
 
         key(Unit) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
-                factory  = { ctx ->
+                factory = { ctx ->
                     val poseManager = PoseManager { pd ->
                         if (!isDisposed.value) viewModel.broadcastPose(
                             pd.x, pd.y, pd.z, pd.qx, pd.qy, pd.qz, pd.qw
@@ -251,38 +253,37 @@ fun ArScreen(
                     }
 
                     ManagedARSceneView(
-                        context              = ctx,
+                        context = ctx,
                         sessionConfiguration = { _, config ->
-                            config.planeFindingMode    = Config.PlaneFindingMode.HORIZONTAL
+                            config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
                             config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-                            config.updateMode          = Config.UpdateMode.LATEST_CAMERA_IMAGE
+                            config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
                         },
                         onSessionCreated = { _ -> Log.d(TAG, "Session created") },
                         onSessionUpdated = { session, frame ->
                             if (isDisposed.value) return@ManagedARSceneView
                             sessionManagerRef[0]?.onSessionUpdated(
-                                session     = session,
-                                frame       = frame,
-                                getPeers    = { currentPeers },
-                                getSelected = { currentSelectedId }
+                                session = session,
+                                frame = frame,
+                                getPeers = { currentPeers }
                             )
                         },
                         onSessionFailed = { e -> Log.e(TAG, "Session failed: ${e.message}") }
                     ).also { sv ->
                         sceneViewRef[0] = sv
 
-                        val lr = LineRenderer(sv)
-                        val localName = displayName.ifBlank { android.os.Build.MODEL }
-                        val sm = ArSessionManager(lr, poseManager, localName)
-                        lineRendererRef[0]   = lr
+                        val nm = ArNodeManager(sv)
+                        val localName = displayName.ifBlank { Build.MODEL }
+                        val sm = ArSessionManager(nm, poseManager, localName)
+                        nodeManagerRef[0] = nm
                         sessionManagerRef[0] = sm
 
                         sv.onBeforeDetach = {
-                            // Packet nodes are managed outside LineRenderer, clean them up first
+                            // Packet nodes are managed outside ArNodeManager, clean them up first
                             packetNodes.toList().forEach { node ->
                                 node.childNodes.toList().forEach { runCatching { it.destroy() } }
                                 runCatching { sv.removeChildNode(node) }
-                                runCatching { node.anchor?.detach() }
+                                runCatching { node.anchor.detach() }
                                 runCatching { node.destroy() }
                             }
                             packetNodes.clear()
@@ -290,12 +291,12 @@ fun ArScreen(
                             allMaterials.forEach { runCatching { sv.engine.destroyMaterialInstance(it) } }
                             allMaterials.clear()
 
-                            lr.clearAll()
+                            nm.clearAll()
                             sm.reset()
 
-                            lineRendererRef[0]   = null
+                            nodeManagerRef[0] = null
                             sessionManagerRef[0] = null
-                            sceneViewRef[0]      = null
+                            sceneViewRef[0] = null
                         }
                     }
                 },
@@ -304,35 +305,34 @@ fun ArScreen(
         }
 
         ArHud(
-            peers          = peers,
+            peers = peers,
             selectedPeerId = selectedPeerId,
-            onSelectPeer   = { viewModel.selectPeer(it) },
-            onSendTcp      = { viewModel.sendTcpData() },
-            onSendUdp      = { viewModel.sendUdpData() },
-            onBack         = onBack
+            onSelectPeer = { viewModel.selectPeer(it) },
+            onSendTcp = { viewModel.sendTcpData() },
+            onSendUdp = { viewModel.sendUdpData() },
+            onBack = onBack
         )
     }
 }
 
-// ── Packet animation (standalone suspend fun) ─────────────────────────────────
-
+// Packet animation
 private suspend fun animatePacket(
-    sv:           ARSceneView,
-    fromPos:      Triple<Float, Float, Float>,
-    toPos:        Triple<Float, Float, Float>,
-    color:        androidx.compose.ui.graphics.Color,
-    isDrop:       Boolean,
-    durationMs:   Long,
-    isDisposed:   State<Boolean>,
+    sv: ARSceneView,
+    fromPos: Triple<Float, Float, Float>,
+    toPos: Triple<Float, Float, Float>,
+    color: Color,
+    isDrop: Boolean,
+    durationMs: Long,
+    isDisposed: State<Boolean>,
     allMaterials: MutableList<MaterialInstance>,
-    packetNodes:  MutableList<AnchorNode>
+    packetNodes: MutableList<AnchorNode>
 ) {
     val session = sv.session ?: return
     if (isDisposed.value) return
 
-    val steps  = 30
+    val steps = 30
     val stepMs = durationMs / steps
-    val maxT   = if (isDrop) 0.5f else 1.0f
+    val maxT = if (isDrop) 0.5f else 1.0f
 
     val mat = sv.materialLoader.createColorInstance(
         color = color, metallic = 0f, roughness = 1f, reflectance = 0f
@@ -354,11 +354,11 @@ private suspend fun animatePacket(
     try {
         for (step in 0..steps) {
             if (isDisposed.value || sv.session == null) break
-            val t  = (step.toFloat() / steps) * maxT
+            val t = (step.toFloat() / steps) * maxT
             sphere.position = Float3(
-                (toPos.first  - fromPos.first)  * t,
+                (toPos.first - fromPos.first) * t,
                 (toPos.second - fromPos.second) * t,
-                (toPos.third  - fromPos.third)  * t
+                (toPos.third - fromPos.third) * t
             )
             delay(stepMs)
         }
@@ -373,7 +373,7 @@ private suspend fun animatePacket(
     } finally {
         runCatching { sphere.destroy() }
         runCatching { if (!isDisposed.value) sv.removeChildNode(node) }
-        runCatching { node.anchor?.detach() }
+        runCatching { node.anchor.detach() }
         runCatching { node.destroy() }
         packetNodes.remove(node)
     }

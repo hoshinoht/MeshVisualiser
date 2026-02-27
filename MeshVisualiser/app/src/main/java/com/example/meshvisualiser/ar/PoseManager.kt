@@ -6,15 +6,6 @@ import com.google.ar.core.Camera
 import com.google.ar.core.Pose
 import com.example.meshvisualiser.models.PoseData
 
-/**
- * Calculates device poses relative to a shared anchor for cross-device coordinate consistency.
- *
- * ARCore Pose API: each Frame.camera.pose gives device position/orientation in world space.
- * To get the pose relative to the shared anchor:
- *   anchorPose.inverse().compose(cameraPose)
- *
- * This gives a position and quaternion that any peer can interpret in anchor-local space.
- */
 class PoseManager(
     private val onPoseCalculated: (poseData: PoseData) -> Unit
 ) {
@@ -43,8 +34,8 @@ class PoseManager(
     fun updatePose(camera: Camera) {
         val anchor = sharedAnchor ?: return
         try {
-            val cameraPose: Pose   = camera.pose
-            val anchorPose: Pose   = anchor.pose
+            val cameraPose: Pose = camera.pose
+            val anchorPose: Pose = anchor.pose
             val relativePose: Pose = anchorPose.inverse().compose(cameraPose)
 
             val translation = relativePose.translation
@@ -67,7 +58,7 @@ class PoseManager(
         }
     }
 
-    /** Parse a received [PoseData] into an ARCore [Pose] for use in [LineRenderer]. */
+    /** Parse a received [PoseData] into an ARCore [Pose] for use in [ArNodeManager]. */
     fun poseDataToArCorePose(poseData: PoseData): Pose =
         Pose(
             floatArrayOf(poseData.x, poseData.y, poseData.z),
