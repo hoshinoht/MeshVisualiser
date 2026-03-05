@@ -32,6 +32,7 @@ import com.meshvisualiser.ui.components.HardwareIssue
 import com.meshvisualiser.ui.components.HardwareType
 import kotlin.random.Random
 import kotlinx.coroutines.Job
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -305,6 +306,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _anchorResolved = MutableStateFlow(false)
     val anchorResolved: StateFlow<Boolean> = _anchorResolved.asStateFlow()
 
+    // Tracked collector jobs — cancelled on re-initialization to prevent leaks
+    private val collectorJobs = mutableListOf<Job>()
+
     private var isInitialized = false
     private var meshStarted = false
 
@@ -423,6 +427,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun doSendTcp(peer: PeerInfo, targetId: Long, payload: String, seq: Int) {
+        if (!isInitialized) return
         val message = MeshMessage.dataTcp(localId, payload, seq)
         val eventId = nextTransferEventId++
         seqToTransferEventId[seq] = eventId
@@ -495,6 +500,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun doSendUdp(peer: PeerInfo, targetId: Long, payload: String) {
+        if (!isInitialized) return
         val message = MeshMessage.dataUdp(localId, payload)
         nearbyManager.sendMessage(peer.endpointId, message)
         addLog("OUT", "UDP", targetId, peer.deviceModel, payload, message.toBytes().size)
@@ -1051,11 +1057,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onPoseUpdate = { _, _ -> } // No-op: AR pose updates removed
         )
 
+        // Cancel any existing collector jobs from a prior initialization
+        collectorJobs.forEach { it.cancel() }
+        collectorJobs.clear()
+
         // Observe nearby peers
-        viewModelScope.launch { nearbyManager.peers.collect { peers -> _peers.value = peers } }
+        collectorJobs += viewModelScope.launch { nearbyManager.peers.collect { peers -> _peers.value = peers } }
 
         // Observe mesh state
-        viewModelScope.launch {
+        collectorJobs += viewModelScope.launch {
             meshManager.meshState.collect { state ->
                 _meshState.value = state
                 updateStatusMessage(state)
@@ -1063,7 +1073,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // Observe leader
-        viewModelScope.launch {
+        collectorJobs += viewModelScope.launch {
             meshManager.currentLeaderId.collect { leaderId ->
                 _currentLeaderId.value = leaderId
                 _isLeader.value = leaderId == localId
@@ -1071,9 +1081,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // Observe discovery diagnostics
-        viewModelScope.launch { nearbyManager.isDiscovering.collect { _nearbyIsDiscovering.value = it } }
-        viewModelScope.launch { nearbyManager.isAdvertising.collect { _nearbyIsAdvertising.value = it } }
-        viewModelScope.launch { nearbyManager.lastError.collect { _nearbyError.value = it } }
+        collectorJobs += viewModelScope.launch { nearbyManager.isDiscovering.collect { _nearbyIsDiscovering.value = it } }
+        collectorJobs += viewModelScope.launch { nearbyManager.isAdvertising.collect { _nearbyIsAdvertising.value = it } }
+        collectorJobs += viewModelScope.launch { nearbyManager.lastError.collect { _nearbyError.value = it } }
 
         // Re-broadcast cloud anchor ID when a peer connects (leader only)
         peerRebroadcastJob?.cancel()
@@ -1250,6 +1260,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
 
+        collectorJobs.forEach { it.cancel() }
+        collectorJobs.clear()
+        peerRebroadcastJob?.cancel()
         hardwareCheckJob?.cancel()
         discoveryTimeoutJob?.cancel()
 

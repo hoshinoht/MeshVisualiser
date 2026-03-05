@@ -1,6 +1,7 @@
 package com.meshvisualiser.ar
 
 import android.util.Log
+import com.meshvisualiser.MeshVisualizerApp
 import com.google.ar.core.Anchor
 import com.google.ar.core.Config
 import com.google.ar.core.Session
@@ -25,7 +26,6 @@ class CloudAnchorManager(
 ) {
     companion object {
         private const val TAG = "CloudAnchorManager"
-        private const val CLOUD_ANCHOR_TTL_DAYS = 1
     }
 
     private var session: Session? = null
@@ -50,7 +50,7 @@ class CloudAnchorManager(
         }
         Log.d("CloudAnchorSync", "Leader: calling hostCloudAnchorAsync...")
         try {
-            session.hostCloudAnchorAsync(localAnchor, CLOUD_ANCHOR_TTL_DAYS) { cloudAnchorId, state ->
+            session.hostCloudAnchorAsync(localAnchor, MeshVisualizerApp.CLOUD_ANCHOR_TTL_DAYS) { cloudAnchorId, state ->
                 Log.d("CloudAnchorSync", "Leader: hostCloudAnchorAsync callback — state=$state, id=$cloudAnchorId")
                 if (state == Anchor.CloudAnchorState.SUCCESS) {
                     Log.d("CloudAnchorSync", "Leader: hosting SUCCESS, id=$cloudAnchorId")

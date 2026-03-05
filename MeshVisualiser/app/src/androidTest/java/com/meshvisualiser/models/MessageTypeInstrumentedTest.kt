@@ -19,6 +19,8 @@ class MessageTypeInstrumentedTest {
         assertEquals(MessageType.DATA_TCP, MessageType.fromValue(6))
         assertEquals(MessageType.DATA_UDP, MessageType.fromValue(7))
         assertEquals(MessageType.START_MESH, MessageType.fromValue(8))
+        assertEquals(MessageType.CONFIG_SYNC, MessageType.fromValue(9))
+        assertEquals(MessageType.ANIM_EVENT, MessageType.fromValue(10))
     }
 
     @Test

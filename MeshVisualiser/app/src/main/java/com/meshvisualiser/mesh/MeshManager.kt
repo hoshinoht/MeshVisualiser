@@ -157,14 +157,14 @@ class MeshManager(
 
     private fun handlePoseUpdate(senderId: Long, message: MeshMessage) {
         message.parsePoseData()?.let { poseData ->
-            val validPeers = nearbyManager.getValidPeers()
-            val peerEntry = validPeers.entries.find { it.value.peerId == senderId }
-            peerEntry?.value?.updatePose(poseData.x, poseData.y, poseData.z)
+            // Update peer pose through NearbyConnectionsManager's StateFlow using copy()
+            nearbyManager.updatePeerPose(senderId, poseData.x, poseData.y, poseData.z)
 
             onPoseUpdate(senderId, poseData)
 
             // If we're the leader, relay this pose to all OTHER peers
             if (isLeader) {
+                val validPeers = nearbyManager.getValidPeers()
                 validPeers.entries
                     .filter { it.value.peerId != senderId }  // don't echo back to sender
                     .forEach { (endpointId, _) ->

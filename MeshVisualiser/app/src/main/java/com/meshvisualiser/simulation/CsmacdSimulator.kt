@@ -1,6 +1,8 @@
 package com.meshvisualiser.simulation
 
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class CsmaState { IDLE, SENSING, TRANSMITTING, COLLISION, BACKOFF, SUCCESS }
 
@@ -26,14 +28,16 @@ class CsmacdSimulator(
     }
 
     private var state = CsmacdState()
+    private val mutex = Mutex()
 
     /**
      * Run the CSMA/CD simulation. Suspends until transmission succeeds or max retries.
+     * Uses a Mutex to prevent concurrent simulations from corrupting shared state.
      * @param peerCount number of active peers (affects collision probability)
      * @param onTransmitReady callback when medium is acquired and ready to send
      * @return true if transmission succeeded
      */
-    suspend fun simulateTransmission(peerCount: Int, onTransmitReady: suspend () -> Unit): Boolean {
+    suspend fun simulateTransmission(peerCount: Int, onTransmitReady: suspend () -> Unit): Boolean = mutex.withLock {
         var attempt = 0
 
         while (attempt < MAX_RETRIES) {

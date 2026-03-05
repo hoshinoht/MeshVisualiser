@@ -85,9 +85,8 @@ class ProtocolNarrator(
         }
 
         // Batch for LLM analysis via backend
-        synchronized(batchedEvents) {
-            batchedEvents.add(event)
-        }
+        // All callers are on Main dispatcher, so no synchronization needed
+        batchedEvents.add(event)
 
         if (batchJob == null || batchJob?.isActive != true) {
             batchJob = scope.launch {
@@ -158,11 +157,9 @@ class ProtocolNarrator(
     }
 
     private fun processBatch() {
-        val events: List<ProtocolEvent>
-        synchronized(batchedEvents) {
-            events = batchedEvents.toList()
-            batchedEvents.clear()
-        }
+        // All callers are on Main dispatcher, so no synchronization needed
+        val events = batchedEvents.toList()
+        batchedEvents.clear()
 
         if (events.isEmpty()) return
 

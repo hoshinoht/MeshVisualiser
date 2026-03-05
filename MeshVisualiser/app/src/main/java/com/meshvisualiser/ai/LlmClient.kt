@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
  */
 class AiClient(
     private var serverBaseUrl: String = DEFAULT_SERVER_URL,
-    private var apiKey: String = ""
+    @Volatile private var apiKey: String = ""
 ) {
     companion object {
         private const val TAG = "AiClient"
@@ -195,13 +195,15 @@ class AiClient(
                     .put(json.toRequestBody(JSON_MEDIA_TYPE))
                     .build()
 
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    return@withContext Result.failure(
-                        IOException("PUT $path returned ${response.code}")
-                    )
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        val errorBody = response.body?.string()
+                        return@withContext Result.failure(
+                            IOException("PUT $path returned ${response.code}: ${errorBody?.take(200)}")
+                        )
+                    }
+                    Result.success(Unit)
                 }
-                Result.success(Unit)
             } catch (e: IOException) {
                 Log.e(TAG, "PUT $path failed: ${e.message}")
                 Result.failure(e)

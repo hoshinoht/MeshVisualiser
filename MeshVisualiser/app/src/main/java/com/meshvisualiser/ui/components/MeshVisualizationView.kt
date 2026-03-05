@@ -176,7 +176,7 @@ fun MeshVisualizationView(
         listOf(MeshAccent1, MeshAccent2, MeshAccent3, MeshAccent4)
     }
 
-    // Colors
+    // Colors — read from theme outside Canvas to avoid re-reading on every frame
     val surfaceColor = MaterialTheme.colorScheme.surface
     val surfaceContainerColor = MaterialTheme.colorScheme.surfaceContainer
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
@@ -188,10 +188,71 @@ fun MeshVisualizationView(
     val leaderColor = StatusLeader
     val connectedColor = StatusConnected
 
+    // Pre-cached Paint objects — allocated once, color updated per-frame inside Canvas
+    val labelPaint = remember {
+        Paint().apply {
+            textSize = 38f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+    }
+    val rolePaint = remember {
+        Paint().apply {
+            textSize = 26f
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+    }
+    val rttPaint = remember {
+        Paint().apply {
+            textSize = 24f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+            isAntiAlias = true
+        }
+    }
+    val subtitlePaint = remember {
+        Paint().apply {
+            textSize = 28f
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+    }
+    val packetLabelPaint = remember {
+        Paint().apply {
+            textSize = 22f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+    }
+    val innerTextPaint = remember {
+        Paint().apply {
+            textSize = 30f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+    }
+
+    // Pre-cached Matrix and Path objects for background blobs — reused every frame
+    val blobMatrix1 = remember { Matrix() }
+    val blobMatrix2 = remember { Matrix() }
+    val blobMatrix3 = remember { Matrix() }
+    val blobMatrix4 = remember { Matrix() }
+
     Canvas(modifier = modifier.fillMaxSize()) {
         val centerX = size.width / 2f
         val centerY = size.height * 0.38f
         val graphRadius = minOf(size.width, size.height) * 0.28f
+
+        // Update theme-dependent paint colors each frame (cheap — no allocation)
+        labelPaint.color = onSurfaceColor.toArgb()
+        rolePaint.color = onSurfaceVariantColor.copy(alpha = 0.8f).toArgb()
+        rttPaint.color = onSurfaceVariantColor.copy(alpha = 0.7f).toArgb()
+        subtitlePaint.color = onSurfaceVariantColor.toArgb()
+        innerTextPaint.color = onSurfaceColor.toArgb()
 
         // =============================================
         // 1. BACKGROUND — organic blobs + scatter dots
@@ -209,7 +270,8 @@ fun MeshVisualizationView(
 
         // Decorative M3 shape blobs using MaterialShapes
         // Top-left: Cookie shape
-        val blobMatrix1 = Matrix().apply {
+        blobMatrix1.apply {
+            reset()
             setScale(size.width * 0.28f, size.width * 0.28f)
             postTranslate(size.width * 0.12f, size.height * 0.10f)
         }
@@ -217,7 +279,8 @@ fun MeshVisualizationView(
         drawPath(blob1, color = primaryColor.copy(alpha = 0.06f))
 
         // Bottom-right: Clover shape
-        val blobMatrix2 = Matrix().apply {
+        blobMatrix2.apply {
+            reset()
             setScale(size.width * 0.32f, size.width * 0.32f)
             postTranslate(size.width * 0.85f, size.height * 0.72f)
         }
@@ -225,7 +288,8 @@ fun MeshVisualizationView(
         drawPath(blob2, color = tertiaryColor.copy(alpha = 0.05f))
 
         // Center-right: SoftBurst shape
-        val blobMatrix3 = Matrix().apply {
+        blobMatrix3.apply {
+            reset()
             setScale(size.width * 0.22f, size.width * 0.22f)
             postTranslate(size.width * 0.78f, size.height * 0.25f)
         }
@@ -233,7 +297,8 @@ fun MeshVisualizationView(
         drawPath(blob3, color = secondaryColor.copy(alpha = 0.05f))
 
         // Bottom-left: Flower shape
-        val blobMatrix4 = Matrix().apply {
+        blobMatrix4.apply {
+            reset()
             setScale(size.width * 0.20f, size.width * 0.20f)
             postTranslate(size.width * 0.18f, size.height * 0.68f)
         }
@@ -241,7 +306,6 @@ fun MeshVisualizationView(
         drawPath(blob4, color = primaryColor.copy(alpha = 0.04f))
 
         // Scatter dots
-        val rng = Random(42)
         scatterDots.forEachIndexed { i, (xFrac, yFrac, radius) ->
             val color = scatterColors[i % scatterColors.size]
             val alpha = 0.15f + (i % 3) * 0.05f
@@ -297,53 +361,7 @@ fun MeshVisualizationView(
             nodePositions[peerId] = Offset(x, y)
         }
 
-        // ============================
-        // 3. PAINTS
-        // ============================
-        val labelPaint = Paint().apply {
-            textSize = 38f
-            color = onSurfaceColor.toArgb()
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            isAntiAlias = true
-        }
-
-        val rolePaint = Paint().apply {
-            textSize = 26f
-            color = onSurfaceVariantColor.copy(alpha = 0.8f).toArgb()
-            textAlign = Paint.Align.CENTER
-            isAntiAlias = true
-        }
-
-        val rttPaint = Paint().apply {
-            textSize = 24f
-            color = onSurfaceVariantColor.copy(alpha = 0.7f).toArgb()
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
-            isAntiAlias = true
-        }
-
-        val subtitlePaint = Paint().apply {
-            textSize = 28f
-            color = onSurfaceVariantColor.toArgb()
-            textAlign = Paint.Align.CENTER
-            isAntiAlias = true
-        }
-
-        val packetLabelPaint = Paint().apply {
-            textSize = 22f
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            isAntiAlias = true
-        }
-
-        val innerTextPaint = Paint().apply {
-            textSize = 30f
-            color = onSurfaceColor.toArgb()
-            textAlign = Paint.Align.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            isAntiAlias = true
-        }
+        // Paints are pre-cached via remember {} above Canvas — colors updated at top of Canvas block
 
         // =============================================
         // 4. EDGES — mesh connections + junction dots

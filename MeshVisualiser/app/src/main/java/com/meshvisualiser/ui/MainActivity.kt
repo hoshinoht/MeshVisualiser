@@ -70,16 +70,15 @@ import androidx.core.content.ContextCompat
 import com.meshvisualiser.ui.theme.MeshVisualiserTheme
 import com.google.ar.core.ArCoreApk
 import com.meshvisualiser.ui.PeerEvent
-import kotlinx.coroutines.MainScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
     private val snackbarHostState = SnackbarHostState()
-    private val activityScope = MainScope()
 
     private fun showSnackbar(message: String) {
-        activityScope.launch { snackbarHostState.showSnackbar(message) }
+        lifecycleScope.launch { snackbarHostState.showSnackbar(message) }
     }
 
     // Track whether camera permission has been granted — exposed to Compose
@@ -899,7 +898,7 @@ fun DataExchangePanel(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "${tcpAckTimeoutMs - 3000}ms",
+                    text = "${tcpAckTimeoutMs}ms",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.Gray,
                     fontWeight = FontWeight.Bold

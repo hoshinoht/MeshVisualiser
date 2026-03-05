@@ -1,34 +1,27 @@
 package com.meshvisualiser.models
 
-/** Information about a connected peer in the mesh network. */
+/** Information about a connected peer in the mesh network. Fully immutable — use copy() for updates. */
 data class PeerInfo(
         /** Nearby Connections endpoint ID */
         val endpointId: String,
 
         /** Unique peer ID (Long) exchanged during handshake */
-        var peerId: Long = -1L,
+        val peerId: Long = -1L,
 
         /** Peer's display name */
         val displayName: String = "",
 
         /** Current relative pose (x, y, z) to shared anchor */
-        var relativeX: Float = 0f,
-        var relativeY: Float = 0f,
-        var relativeZ: Float = 0f,
+        val relativeX: Float = 0f,
+        val relativeY: Float = 0f,
+        val relativeZ: Float = 0f,
 
         /** Device model name (e.g. "Pixel 7") */
-        var deviceModel: String = "",
+        val deviceModel: String = "",
 
         /** Last update timestamp */
-        var lastUpdateMs: Long = System.currentTimeMillis()
+        val lastUpdateMs: Long = System.currentTimeMillis()
 ) {
   val hasValidPeerId: Boolean
     get() = peerId != -1L
-
-  fun updatePose(x: Float, y: Float, z: Float) {
-    relativeX = x
-    relativeY = y
-    relativeZ = z
-    lastUpdateMs = System.currentTimeMillis()
-  }
 }

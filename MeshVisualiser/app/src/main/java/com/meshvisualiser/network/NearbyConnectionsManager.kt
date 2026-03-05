@@ -349,6 +349,20 @@ class NearbyConnectionsManager(
     _peers.value.keys.forEach { endpointId -> connectionsClient.sendPayload(endpointId, payload) }
   }
 
+  /** Update a peer's pose immutably through the StateFlow. */
+  fun updatePeerPose(peerId: Long, x: Float, y: Float, z: Float) {
+    _peers.update { currentPeers ->
+      val entry = currentPeers.entries.find { it.value.peerId == peerId } ?: return@update currentPeers
+      val updated = entry.value.copy(
+        relativeX = x,
+        relativeY = y,
+        relativeZ = z,
+        lastUpdateMs = System.currentTimeMillis()
+      )
+      currentPeers + (entry.key to updated)
+    }
+  }
+
   /** Get peers with valid peer IDs (handshake completed). */
   fun getValidPeers(): Map<String, PeerInfo> {
     return _peers.value.filter { it.value.hasValidPeerId }

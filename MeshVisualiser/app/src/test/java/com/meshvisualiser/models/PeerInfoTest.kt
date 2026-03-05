@@ -24,16 +24,23 @@ class PeerInfoTest {
     }
 
     @Test
-    fun `updatePose sets coordinates and updates timestamp`() {
+    fun `copy with pose sets coordinates and updates timestamp`() {
         val peer = PeerInfo(endpointId = "ep1")
         val before = peer.lastUpdateMs
         Thread.sleep(10)
-        peer.updatePose(1.5f, 2.5f, 3.5f)
+        val updated = peer.copy(
+            relativeX = 1.5f,
+            relativeY = 2.5f,
+            relativeZ = 3.5f,
+            lastUpdateMs = System.currentTimeMillis()
+        )
 
-        assertEquals(1.5f, peer.relativeX, 0.001f)
-        assertEquals(2.5f, peer.relativeY, 0.001f)
-        assertEquals(3.5f, peer.relativeZ, 0.001f)
-        assertTrue(peer.lastUpdateMs > before)
+        assertEquals(1.5f, updated.relativeX, 0.001f)
+        assertEquals(2.5f, updated.relativeY, 0.001f)
+        assertEquals(3.5f, updated.relativeZ, 0.001f)
+        assertTrue(updated.lastUpdateMs > before)
+        // Original is unchanged (immutable)
+        assertEquals(0f, peer.relativeX, 0.001f)
     }
 
     @Test

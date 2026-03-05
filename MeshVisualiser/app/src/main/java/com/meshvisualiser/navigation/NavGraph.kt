@@ -98,7 +98,7 @@ fun MeshNavHost(
             )
         }
 
-        composable("ar") {
+        composable(Routes.AR) {
            ArScreen(
                viewModel = viewModel,
                onBack = { navController.popBackStack() }

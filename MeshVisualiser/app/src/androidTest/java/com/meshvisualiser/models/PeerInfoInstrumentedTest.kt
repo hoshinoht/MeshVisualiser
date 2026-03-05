@@ -27,15 +27,22 @@ class PeerInfoInstrumentedTest {
     }
 
     @Test
-    fun updatePose_sets_coordinates_and_updates_timestamp() {
+    fun copy_with_pose_sets_coordinates_and_updates_timestamp() {
         val peer = PeerInfo(endpointId = "ep1")
         val before = peer.lastUpdateMs
         Thread.sleep(10)
-        peer.updatePose(1f, 2f, 3f)
+        val updated = peer.copy(
+            relativeX = 1f,
+            relativeY = 2f,
+            relativeZ = 3f,
+            lastUpdateMs = System.currentTimeMillis()
+        )
 
-        assertEquals(1f, peer.relativeX, 0.001f)
-        assertEquals(2f, peer.relativeY, 0.001f)
-        assertEquals(3f, peer.relativeZ, 0.001f)
-        assertTrue(peer.lastUpdateMs > before)
+        assertEquals(1f, updated.relativeX, 0.001f)
+        assertEquals(2f, updated.relativeY, 0.001f)
+        assertEquals(3f, updated.relativeZ, 0.001f)
+        assertTrue(updated.lastUpdateMs > before)
+        // Original is unchanged (immutable data class)
+        assertEquals(0f, peer.relativeX, 0.001f)
     }
 }

@@ -36,6 +36,7 @@ import com.google.ar.core.Pose
 import com.google.ar.core.Session
 import com.google.ar.core.Session.FeatureMapQuality
 import dev.romainguy.kotlin.math.Float3
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.MyLocation
@@ -414,13 +415,13 @@ fun ArScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    val peers by viewModel.peers.collectAsState()
-    val selectedPeerId by viewModel.selectedPeerId.collectAsState()
-    val packetEvents by viewModel.packetAnimEvents.collectAsState()
-    val displayName by viewModel.displayName.collectAsState()
-    val cloudAnchorId by viewModel.cloudAnchorId.collectAsState()
-    val isLeader by viewModel.isLeader.collectAsState()
-    val cloudAnchorStatus by viewModel.cloudAnchorStatus.collectAsState()
+    val peers by viewModel.peers.collectAsStateWithLifecycle()
+    val selectedPeerId by viewModel.selectedPeerId.collectAsStateWithLifecycle()
+    val packetEvents by viewModel.packetAnimEvents.collectAsStateWithLifecycle()
+    val displayName by viewModel.displayName.collectAsStateWithLifecycle()
+    val cloudAnchorId by viewModel.cloudAnchorId.collectAsStateWithLifecycle()
+    val isLeader by viewModel.isLeader.collectAsStateWithLifecycle()
+    val cloudAnchorStatus by viewModel.cloudAnchorStatus.collectAsStateWithLifecycle()
 
     // rememberUpdatedState so lambdas inside AndroidView always read latest values
     val currentPeers by rememberUpdatedState(peers)
@@ -440,7 +441,7 @@ fun ArScreen(
     val packetSpherePool = remember { ArrayDeque<SphereNode>(32) }
     val animatedEventIds = remember { mutableSetOf<Long>() }
     val resolveAttempt = remember { mutableStateOf(0) }
-    val anchorResolved by viewModel.anchorResolved.collectAsState()
+    val anchorResolved by viewModel.anchorResolved.collectAsStateWithLifecycle()
     val resolveStartTime = remember { mutableStateOf(0L) }
     val resolveTimedOut = remember { mutableStateOf(false) }
 
@@ -690,6 +691,12 @@ fun ArScreen(
                             Log.e("CloudAnchorSync", "onBeforeDetach fired — about to destroy AR scene")
                             packetSpherePool.forEach { runCatching { it.destroy() } }
                             packetSpherePool.clear()
+
+                            // Destroy Filament MaterialInstances to prevent GPU memory leak
+                            packetMats.values.forEach { mi -> runCatching { sv.engine.destroyMaterialInstance(mi) } }
+                            packetMats.clear()
+                            unlitMaterialRef[0]?.let { mat -> runCatching { sv.engine.destroyMaterial(mat) } }
+                            unlitMaterialRef[0] = null
 
                             nm.clearAll()
                             sm.reset()
