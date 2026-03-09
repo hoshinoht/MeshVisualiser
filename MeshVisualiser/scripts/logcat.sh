@@ -7,7 +7,7 @@
 #   ./scripts/logcat.sh --tag "TAG"  # filter by tag
 set -euo pipefail
 
-PACKAGE="com.example.meshvisualiser"
+PACKAGE="com.meshvisualiser"
 APP_ONLY=false
 TAG_FILTER=""
 

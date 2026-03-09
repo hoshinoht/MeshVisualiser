@@ -15,11 +15,11 @@ val localProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.example.meshvisualiser"
+    namespace = "com.meshvisualiser"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.meshvisualiser"
+        applicationId = "com.meshvisualiser"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -120,6 +120,9 @@ dependencies {
 
     // JSON serialization
     implementation("com.google.code.gson:gson:2.11.0")
+
+    // HTTP client for LLM API
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
