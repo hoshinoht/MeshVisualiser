@@ -28,6 +28,8 @@ import com.meshvisualiser.quiz.QuizState
 import com.meshvisualiser.simulation.CsmacdSimulator
 import com.meshvisualiser.simulation.CsmacdState
 import com.meshvisualiser.ui.components.AiTestState
+import com.meshvisualiser.ui.components.HardwareIssue
+import com.meshvisualiser.ui.components.HardwareType
 import kotlin.random.Random
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -80,6 +82,12 @@ enum class TransferType { SEND_TCP, SEND_UDP, RECEIVE_TCP, RECEIVE_UDP }
 enum class TransferStatus { IN_PROGRESS, DELIVERED, SENT, DROPPED, RETRYING, FAILED }
 enum class ConnectionFlowState { IDLE, JOINING, IN_LOBBY, STARTING }
 
+sealed class PeerEvent {
+    data class PeerJoined(val name: String) : PeerEvent()
+    data class PeerLeft(val name: String) : PeerEvent()
+    data class LeaderElected(val name: String, val isLocal: Boolean) : PeerEvent()
+}
+
 /**
  * ViewModel for the main mesh visualization screen. Coordinates all managers and handles the
  * mesh lifecycle.
@@ -104,15 +112,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _displayName = MutableStateFlow("")
     val displayName: StateFlow<String> = _displayName.asStateFlow()
 
+    // ── AI Integration (must be before init block) ──
+
+    val aiClient = AiClient(
+        apiKey = com.meshvisualiser.BuildConfig.MESH_SERVER_API_KEY
+    )
+
+    // AI Settings
+    private val _llmBaseUrl = MutableStateFlow("http://localhost:1234")
+    val llmBaseUrl: StateFlow<String> = _llmBaseUrl.asStateFlow()
+    private val _llmModel = MutableStateFlow("default")
+    val llmModel: StateFlow<String> = _llmModel.asStateFlow()
+
     init {
         viewModelScope.launch {
             prefsRepo.displayName.collect { _displayName.value = it }
-        }
-        // Load saved AI server URL
-        viewModelScope.launch {
-            prefsRepo.aiServerUrl.collect { url ->
-                if (url.isNotBlank()) aiClient.updateServerUrl(url)
-            }
         }
         // Fetch LLM config from backend on startup
         viewModelScope.launch {
@@ -147,6 +161,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _nearbyError = MutableStateFlow<String?>(null)
     val nearbyError: StateFlow<String?> = _nearbyError.asStateFlow()
+
+    // Hardware readiness
+    private val _hardwareIssues = MutableStateFlow<List<HardwareIssue>>(emptyList())
+    val hardwareIssues: StateFlow<List<HardwareIssue>> = _hardwareIssues.asStateFlow()
+
+    private var hardwareCheckJob: Job? = null
+
+    // Discovery timeout
+    private val _discoveryTimeoutReached = MutableStateFlow(false)
+    val discoveryTimeoutReached: StateFlow<Boolean> = _discoveryTimeoutReached.asStateFlow()
+    private var discoveryTimeoutJob: Job? = null
+
+    // Peer events
+    private val _peerEvents = MutableSharedFlow<PeerEvent>(extraBufferCapacity = 10)
+    val peerEvents: SharedFlow<PeerEvent> = _peerEvents.asSharedFlow()
 
     // Generate unique local ID
     val localId: Long = Random.nextLong(1, Long.MAX_VALUE)
@@ -241,9 +270,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _navigateToMesh = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
     val navigateToMesh: SharedFlow<Unit> = _navigateToMesh.asSharedFlow()
 
-    // ── AI Integration ──
+    // ── AI Integration (continued) ──
 
-    val aiClient = AiClient()
     private val scenarioExplorer = ScenarioExplorer(aiClient)
     private val sessionSummarizer = SessionSummarizer(aiClient)
     val narrator = ProtocolNarrator(aiClient, viewModelScope, ::captureSnapshot)
@@ -266,10 +294,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // AI Settings
     private val _aiTestState = MutableStateFlow<AiTestState>(AiTestState.Idle)
     val aiTestState: StateFlow<AiTestState> = _aiTestState.asStateFlow()
-    private val _llmBaseUrl = MutableStateFlow("http://localhost:1234")
-    val llmBaseUrl: StateFlow<String> = _llmBaseUrl.asStateFlow()
-    private val _llmModel = MutableStateFlow("default")
-    val llmModel: StateFlow<String> = _llmModel.asStateFlow()
 
     // Session timing
     private var sessionStartTime = 0L
@@ -297,11 +321,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         meshManager.startMeshFormation()
     }
 
+    fun checkHardwareState() {
+        val context = getApplication<Application>()
+        val issues = mutableListOf<HardwareIssue>()
+
+        // Bluetooth
+        val btManager = context.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+        val btEnabled = btManager?.adapter?.isEnabled == true
+        issues.add(HardwareIssue(HardwareType.BLUETOOTH, btEnabled, if (btEnabled) "Bluetooth is on" else "Bluetooth is off"))
+
+        // WiFi
+        val wifiManager = context.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+        val wifiEnabled = wifiManager?.isWifiEnabled == true
+        issues.add(HardwareIssue(HardwareType.WIFI, wifiEnabled, if (wifiEnabled) "WiFi is on" else "WiFi is off"))
+
+        // Location
+        val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE) as? android.location.LocationManager
+        val locationEnabled = locationManager?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true ||
+                              locationManager?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
+        issues.add(HardwareIssue(HardwareType.LOCATION, locationEnabled, if (locationEnabled) "Location is on" else "Location is off"))
+
+        _hardwareIssues.value = issues
+    }
+
     /** Called when this device becomes the leader. */
     private fun onBecomeLeader() {
         Log.d(TAG, "We are now the leader!")
         _isLeader.value = true
-        _statusMessage.value = "Connected as leader!"
+        _statusMessage.value = "Mesh connected — you are the leader"
+        _peerEvents.tryEmit(PeerEvent.LeaderElected("You", isLocal = true))
         narrator.onEvent(ProtocolNarrator.ProtocolEvent.LeaderElected(isLocal = true))
     }
 
@@ -309,17 +357,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun onNewLeader(leaderId: Long) {
         Log.d(TAG, "New leader: $leaderId")
         _isLeader.value = false
-        _statusMessage.value = "Connected!"
+        val leaderName = _peers.value.values.find { it.peerId == leaderId }?.deviceModel ?: "Unknown"
+        _statusMessage.value = "Mesh connected — leader: $leaderName"
+        _peerEvents.tryEmit(PeerEvent.LeaderElected(leaderName, isLocal = false))
         narrator.onEvent(ProtocolNarrator.ProtocolEvent.LeaderElected(isLocal = false))
     }
 
     private fun updateStatusMessage(state: MeshState) {
-        _statusMessage.value =
-            when (state) {
-                MeshState.DISCOVERING -> "Discovering peers..."
-                MeshState.ELECTING -> "Electing leader..."
-                MeshState.CONNECTED -> if (_isLeader.value) "Connected (Leader)" else "Connected"
+        _statusMessage.value = when (state) {
+            MeshState.DISCOVERING -> "Finding nearby peers..."
+            MeshState.ELECTING -> "Electing leader via Bully Algorithm..."
+            MeshState.CONNECTED -> {
+                val leaderName = _peers.value.values.find { it.peerId == _currentLeaderId.value }?.deviceModel
+                if (_isLeader.value) "Mesh connected — you are the leader"
+                else "Mesh connected — leader: ${leaderName ?: "unknown"}"
             }
+        }
     }
 
     /** Select a peer as target for data exchange. */
@@ -730,9 +783,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         meshManager.startDiscovery()
         _connectionState.value = ConnectionFlowState.IN_LOBBY
+
+        // Start periodic hardware checks
+        hardwareCheckJob?.cancel()
+        hardwareCheckJob = viewModelScope.launch {
+            while (true) {
+                checkHardwareState()
+                delay(2000)
+            }
+        }
+
+        // Start discovery timeout
+        _discoveryTimeoutReached.value = false
+        discoveryTimeoutJob?.cancel()
+        discoveryTimeoutJob = viewModelScope.launch {
+            delay(15_000)
+            if (_peers.value.values.none { it.hasValidPeerId }) {
+                _discoveryTimeoutReached.value = true
+            }
+        }
     }
 
     fun leaveGroup() {
+        hardwareCheckJob?.cancel()
+        discoveryTimeoutJob?.cancel()
+        _discoveryTimeoutReached.value = false
         if (isInitialized) {
             nearbyManager.cleanup()
             meshManager.cleanup()
@@ -743,6 +818,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _meshState.value = MeshState.DISCOVERING
         _currentLeaderId.value = -1L
         _isLeader.value = false
+    }
+
+    fun retryDiscovery() {
+        _discoveryTimeoutReached.value = false
+        discoveryTimeoutJob?.cancel()
+        if (isInitialized) {
+            nearbyManager.cleanup()
+            meshManager.cleanup()
+        }
+        val code = _groupCode.value.uppercase().replace("-", "")
+        val serviceId = MeshVisualizerApp.serviceIdForGroup(code)
+        initializeWithServiceId(serviceId)
+        meshManager.startDiscovery()
+        discoveryTimeoutJob = viewModelScope.launch {
+            delay(15_000)
+            if (_peers.value.values.none { it.hasValidPeerId }) {
+                _discoveryTimeoutReached.value = true
+            }
+        }
     }
 
     // --- AR: Cloud Anchors & Pose ---
@@ -999,26 +1093,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── AI: Settings ──
 
-    fun updateAiServerUrl(url: String) {
-        aiClient.updateServerUrl(url)
-        viewModelScope.launch { prefsRepo.setAiServerUrl(url) }
-    }
-
-    fun updateLlmConfig(llmBaseUrl: String, llmModel: String, llmApiKey: String) {
-        viewModelScope.launch {
-            aiClient.updateLlmConfig(
-                AiClient.LlmConfigUpdate(llmBaseUrl, llmModel, llmApiKey)
-            ).onSuccess {
-                _llmBaseUrl.value = llmBaseUrl
-                _llmModel.value = llmModel
-            }
-        }
-    }
-
-    fun saveAiSettings(serverUrl: String, llmBaseUrl: String, llmModel: String, llmApiKey: String) {
-        updateAiServerUrl(serverUrl)
-        updateLlmConfig(llmBaseUrl, llmModel, llmApiKey)
-    }
 
     fun testAiConnection() {
         _aiTestState.value = AiTestState.Testing
@@ -1035,6 +1109,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+
+        hardwareCheckJob?.cancel()
+        discoveryTimeoutJob?.cancel()
 
         if (isInitialized) {
             nearbyManager.cleanup()

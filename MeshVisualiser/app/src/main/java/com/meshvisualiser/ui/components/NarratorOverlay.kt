@@ -1,8 +1,6 @@
 package com.meshvisualiser.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -19,6 +17,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,15 +30,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.ai.NarratorTemplates.NarratorMessage
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun NarratorOverlay(
     messages: List<NarratorMessage>,
     onDismiss: (NarratorMessage) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -50,13 +53,13 @@ fun NarratorOverlay(
             AnimatedVisibility(
                 visible = true,
                 enter = slideInVertically(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    ),
-                    initialOffsetY = { it }
+                    animationSpec = spatialSpec,
+                    initialOffsetY = { it / 2 }
                 ) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                exit = slideOutVertically(
+                    animationSpec = spatialSpec,
+                    targetOffsetY = { it / 2 }
+                ) + fadeOut()
             ) {
                 NarratorCard(
                     message = message,

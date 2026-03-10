@@ -1,7 +1,6 @@
 package com.meshvisualiser.ui
 
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,8 +8,6 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
@@ -72,9 +69,18 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import com.meshvisualiser.ui.theme.MeshVisualiserTheme
 import com.google.ar.core.ArCoreApk
+import com.meshvisualiser.ui.PeerEvent
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
+    private val snackbarHostState = SnackbarHostState()
+    private val activityScope = MainScope()
+
+    private fun showSnackbar(message: String) {
+        activityScope.launch { snackbarHostState.showSnackbar(message) }
+    }
 
     // Track whether camera permission has been granted — exposed to Compose
     private val _cameraPermissionGranted = mutableStateOf(false)
@@ -84,7 +90,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             _cameraPermissionGranted.value = granted
             if (!granted) {
-                Toast.makeText(this, "Camera permission is required for AR", Toast.LENGTH_LONG).show()
+                showSnackbar("Camera permission is required for AR")
             }
         }
 
@@ -103,17 +109,24 @@ class MainActivity : ComponentActivity() {
 
                 val startDest = if (onboardingCompleted) Routes.CONNECTION else Routes.ONBOARDING
 
-                MeshNavHost(
-                    viewModel = viewModel,
-                    startDestination = startDest,
-                    cameraPermissionGranted = cameraPermissionGranted,
-                    onRequestCameraPermission = {
-                        requestCameraPermission.launch(Manifest.permission.CAMERA)
-                    },
-                    onCheckArCoreAvailable = { onAvailable ->
-                        checkArCoreAvailability(onAvailable)
+                Scaffold(
+                    snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+                    containerColor = Color.Transparent
+                ) { innerPadding ->
+                    Box(modifier = Modifier.padding(innerPadding)) {
+                        MeshNavHost(
+                            viewModel = viewModel,
+                            startDestination = startDest,
+                            cameraPermissionGranted = cameraPermissionGranted,
+                            onRequestCameraPermission = {
+                                requestCameraPermission.launch(Manifest.permission.CAMERA)
+                            },
+                            onCheckArCoreAvailable = { onAvailable ->
+                                checkArCoreAvailability(onAvailable)
+                            }
+                        )
                     }
-                )
+                }
             }
         }
     }
@@ -132,12 +145,12 @@ class MainActivity : ComponentActivity() {
                     ArCoreApk.getInstance().requestInstall(this, true)
                     onAvailable(false) // will re-check after install
                 } catch (e: Exception) {
-                    Toast.makeText(this, "ARCore install failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    showSnackbar("ARCore install failed: ${e.message}")
                     onAvailable(false)
                 }
             }
             else -> {
-                Toast.makeText(this, "AR is not supported on this device", Toast.LENGTH_LONG).show()
+                showSnackbar("AR is not supported on this device")
                 onAvailable(false)
             }
         }
@@ -146,7 +159,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNavigateToAr: () -> Unit ) {
+fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     val meshState by viewModel.meshState.collectAsStateWithLifecycle()
     val peers by viewModel.peers.collectAsStateWithLifecycle()
     val isLeader by viewModel.isLeader.collectAsStateWithLifecycle()
@@ -166,6 +179,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNav
     val tcpDropProbability by viewModel.tcpDropProbability.collectAsStateWithLifecycle()
     val tcpAckTimeoutMs by viewModel.tcpAckTimeoutMs.collectAsStateWithLifecycle()
     val showHints by viewModel.showHints.collectAsStateWithLifecycle()
+    val quizState by viewModel.quizState.collectAsStateWithLifecycle()
 
     // AI state
     val narratorEnabled by viewModel.narratorEnabled.collectAsStateWithLifecycle()
@@ -176,6 +190,20 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNav
     val aiTestState by viewModel.aiTestState.collectAsStateWithLifecycle()
     val llmBaseUrl by viewModel.llmBaseUrl.collectAsStateWithLifecycle()
     val llmModel by viewModel.llmModel.collectAsStateWithLifecycle()
+
+    val mainSnackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        viewModel.peerEvents.collect { event ->
+            val message = when (event) {
+                is PeerEvent.PeerJoined -> "${event.name} joined the mesh"
+                is PeerEvent.PeerLeft -> "${event.name} left the mesh"
+                is PeerEvent.LeaderElected -> if (event.isLocal) "You are the leader!"
+                    else "${event.name} elected as leader"
+            }
+            mainSnackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+        }
+    }
 
     var showDataSheet by remember { mutableStateOf(false) }
     var showWhatIfSheet by remember { mutableStateOf(false) }
@@ -287,10 +315,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNav
                             }) {
                                 Icon(Icons.Default.ViewInAr, contentDescription = "AR")
                             }
-                            IconButton(onClick = {
-                                viewModel.startQuiz()
-                                onNavigateToQuiz()
-                            }) {
+                            IconButton(onClick = { viewModel.startQuiz() }) {
                                 Icon(Icons.Default.Quiz, contentDescription = "Quiz")
                             }
                             IconButton(onClick = { showDataSheet = true }) {
@@ -298,7 +323,9 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNav
                             }
                             // Session Summary
                             IconButton(onClick = {
-                                viewModel.generateSessionSummary()
+                                if (sessionSummary.content == null && !sessionSummary.isLoading) {
+                                    viewModel.generateSessionSummary()
+                                }
                                 showSessionSummary = true
                             }) {
                                 Icon(Icons.Default.Summarize, contentDescription = "Summary")
@@ -323,6 +350,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNav
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
+
                         // Peer selector row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -409,6 +437,22 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNav
                 }
             }
         }
+
+        // Peer event snackbar
+        SnackbarHost(
+            hostState = mainSnackbarHostState,
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 100.dp)
+        )
+
+        // Quiz overlay
+        if (quizState.isActive) {
+            QuizOverlay(
+                quizState = quizState,
+                onAnswer = { viewModel.answerQuiz(it) },
+                onNext = { viewModel.nextQuestion() },
+                onClose = { viewModel.closeQuiz() }
+            )
+        }
     }
 
     // ModalBottomSheet for full Data Exchange log
@@ -472,12 +516,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNav
     // AI Settings dialog
     if (showAiSettings) {
         AiSettingsDialog(
-            currentServerUrl = viewModel.aiClient.getServerUrl(),
-            currentLlmBaseUrl = llmBaseUrl,
-            currentLlmModel = llmModel,
-            onSave = { serverUrl, llmUrl, llmMdl, llmKey ->
-                viewModel.saveAiSettings(serverUrl, llmUrl, llmMdl, llmKey)
-            },
             onTestConnection = { viewModel.testAiConnection() },
             testState = aiTestState,
             onDismiss = {
@@ -488,6 +526,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToQuiz: () -> Unit = {},onNav
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun StatusOverlay(
     localId: Long,
@@ -501,10 +540,7 @@ fun StatusOverlay(
             MeshState.ELECTING -> StatusElecting
             MeshState.CONNECTED -> StatusConnected
         },
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "statusColor"
     )
 
@@ -516,26 +552,32 @@ fun StatusOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // My ID
-            Text(
-                text = if (displayName.isNotBlank()) displayName else "My ID: ${localId.toString().takeLast(6)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (displayName.isNotBlank()) displayName else "My ID: ${localId.toString().takeLast(6)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = statusMessage,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = stateColor
+                )
+            }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = statusMessage,
-                style = MaterialTheme.typography.labelLarge,
-                color = stateColor
-            )
+            Spacer(modifier = Modifier.height(6.dp))
+            MeshFormationStepper(currentState = meshState)
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PeerListPanel(
     peers: Map<String, PeerInfo>,
@@ -570,10 +612,7 @@ fun PeerListPanel(
             AnimatedVisibility(
                 visible = expanded,
                 enter = expandVertically(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    )
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
                 ) + fadeIn()
             ) {
                 Column(modifier = Modifier.padding(top = 4.dp)) {
@@ -1020,6 +1059,7 @@ fun DataExchangePanel(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
     val isSend = event.type == TransferType.SEND_TCP || event.type == TransferType.SEND_UDP
@@ -1030,16 +1070,17 @@ fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
     // Animate progress bar
     val progressAnimatable = remember { Animatable(0f) }
     val isIndeterminate = event.status == TransferStatus.IN_PROGRESS || event.status == TransferStatus.RETRYING
+    val progressSpec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
     LaunchedEffect(event.status) {
         when (event.status) {
             TransferStatus.IN_PROGRESS -> { /* stays indeterminate */ }
             TransferStatus.RETRYING -> { /* stays indeterminate */ }
             TransferStatus.DELIVERED, TransferStatus.FAILED ->
-                progressAnimatable.animateTo(1f, animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f))
+                progressAnimatable.animateTo(1f, animationSpec = progressSpec)
             TransferStatus.SENT ->
-                progressAnimatable.animateTo(1f, animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f))
+                progressAnimatable.animateTo(1f, animationSpec = progressSpec)
             TransferStatus.DROPPED ->
-                progressAnimatable.animateTo(1f, animationSpec = spring(dampingRatio = 0.7f, stiffness = 300f))
+                progressAnimatable.animateTo(1f, animationSpec = progressSpec)
         }
     }
 
@@ -1119,10 +1160,7 @@ fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
             AnimatedVisibility(
                 visible = showStatus,
                 enter = expandVertically(
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    )
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
                 ) + fadeIn()
             ) {
                 Column(modifier = Modifier.padding(top = 6.dp)) {

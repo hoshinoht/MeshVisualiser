@@ -69,12 +69,22 @@ class ArSessionManager(
         val ay = anchorPose.ty()
         val az = anchorPose.tz()
 
-        //  Place peer nodes - once only
+        //  Place peer nodes — real or ghost
         peers.values.filter { it.hasValidPeerId }.forEach { peer ->
             if (nodeManager.hasPeer(peer.peerId)) return@forEach
 
             val hasPose = peer.relativeX != 0f || peer.relativeY != 0f || peer.relativeZ != 0f
-            if (!hasPose) return@forEach
+            if (!hasPose) {
+                // Place ghost node for unsync'd peer
+                if (!nodeManager.hasGhost(peer.peerId)) {
+                    val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
+                    nodeManager.placeGhostNode(peer.peerId, label)
+                }
+                return@forEach
+            }
+
+            // Promote ghost to real node when pose arrives
+            nodeManager.promoteGhost(peer.peerId)
 
             // Convert anchor-local relative coords → world space
             val wx = ax + peer.relativeX

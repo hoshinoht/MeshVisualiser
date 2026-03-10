@@ -1,137 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"os"
-	"sync"
-	"time"
 )
 
-// ──────────────────────────────────────────────
-//  LLM configuration (env vars + runtime PUT)
-// ──────────────────────────────────────────────
-
-type LLMConfig struct {
-	mu       sync.RWMutex
-	BaseURL  string `json:"llm_base_url"`
-	Model    string `json:"llm_model"`
-	APIKey   string `json:"llm_api_key,omitempty"`
-}
-
-func NewLLMConfig() *LLMConfig {
-	cfg := &LLMConfig{
-		BaseURL: "http://localhost:1234",
-		Model:   "default",
-	}
-	if v := os.Getenv("LLM_BASE_URL"); v != "" {
-		cfg.BaseURL = v
-	}
-	if v := os.Getenv("LLM_MODEL"); v != "" {
-		cfg.Model = v
-	}
-	if v := os.Getenv("LLM_API_KEY"); v != "" {
-		cfg.APIKey = v
-	}
-	return cfg
-}
-
-func (c *LLMConfig) Get() (baseURL, model, apiKey string) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.BaseURL, c.Model, c.APIKey
-}
-
-func (c *LLMConfig) Update(baseURL, model, apiKey string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if baseURL != "" {
-		c.BaseURL = baseURL
-	}
-	if model != "" {
-		c.Model = model
-	}
-	c.APIKey = apiKey // allow clearing
-}
-
-// ──────────────────────────────────────────────
-//  OpenAI-compatible chat completion client
-// ──────────────────────────────────────────────
-
-var llmHTTPClient = &http.Client{Timeout: 60 * time.Second}
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens"`
-	Temperature float64       `json:"temperature"`
-}
-
-type chatChoice struct {
-	Message chatMessage `json:"message"`
-}
-
-type chatResponse struct {
-	Choices []chatChoice `json:"choices"`
-}
-
-func callLLM(cfg *LLMConfig, messages []chatMessage, maxTokens int) (string, error) {
-	baseURL, model, apiKey := cfg.Get()
-
-	body := chatRequest{
-		Model:       model,
-		Messages:    messages,
-		MaxTokens:   maxTokens,
-		Temperature: 0.7,
-	}
-	payload, _ := json.Marshal(body)
-
-	req, err := http.NewRequest("POST", baseURL+"/v1/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-
-	resp, err := llmHTTPClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("llm request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("llm returned %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 200)]))
-	}
-
-	var cr chatResponse
-	if err := json.Unmarshal(respBody, &cr); err != nil {
-		return "", fmt.Errorf("parse response: %w", err)
-	}
-	if len(cr.Choices) == 0 {
-		return "", fmt.Errorf("no choices in response")
-	}
-	return cr.Choices[0].Message.Content, nil
-}
-
-// ──────────────────────────────────────────────
-//  System prompts (centralized, updatable)
-// ──────────────────────────────────────────────
+// System prompts.
 
 const narratorSystemPrompt = `You are a networking protocol tutor embedded in a mesh networking education app.
 The student is running a live peer-to-peer mesh and you observe protocol events in real-time.
@@ -167,9 +43,7 @@ Generate a personalized learning summary that:
 Reference their actual data. Be encouraging but educational.
 Format with clear sections and bullet points. Keep it under 300 words.`
 
-// ──────────────────────────────────────────────
-//  Request/response types for AI endpoints
-// ──────────────────────────────────────────────
+// Request/response types for AI endpoints.
 
 type NarrateRequest struct {
 	Events    []string `json:"events"`
@@ -197,22 +71,20 @@ type WhatIfResponse struct {
 }
 
 type SummaryRequest struct {
-	MeshState  string `json:"mesh_state"`
-	QuizScore  *int   `json:"quiz_score,omitempty"`
-	QuizTotal  *int   `json:"quiz_total,omitempty"`
+	MeshState string `json:"mesh_state"`
+	QuizScore *int   `json:"quiz_score,omitempty"`
+	QuizTotal *int   `json:"quiz_total,omitempty"`
 }
 
 type SummaryResponse struct {
 	Summary string `json:"summary"`
 }
 
-// ──────────────────────────────────────────────
-//  Route registration
-// ──────────────────────────────────────────────
+// Route registration.
 
-func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig) {
+func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryCache) {
 
-	// GET /ai/config — return current LLM config (API key masked)
+	// GET /ai/config
 	mux.HandleFunc("GET /ai/config", func(w http.ResponseWriter, r *http.Request) {
 		baseURL, model, apiKey := cfg.Get()
 		masked := ""
@@ -227,7 +99,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig) {
 		})
 	})
 
-	// PUT /ai/config — update LLM config at runtime
+	// PUT /ai/config
 	mux.HandleFunc("PUT /ai/config", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			BaseURL string `json:"llm_base_url"`
@@ -243,7 +115,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 	})
 
-	// POST /ai/narrate — explain protocol events
+	// POST /ai/narrate
 	mux.HandleFunc("POST /ai/narrate", func(w http.ResponseWriter, r *http.Request) {
 		var req NarrateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -279,7 +151,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig) {
 		})
 	})
 
-	// POST /ai/what-if — answer what-if questions
+	// POST /ai/what-if
 	mux.HandleFunc("POST /ai/what-if", func(w http.ResponseWriter, r *http.Request) {
 		var req WhatIfRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -297,7 +169,6 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig) {
 			{Role: "assistant", Content: "I can see your mesh network state. What would you like to explore?"},
 		}
 
-		// Append conversation history
 		for _, h := range req.History {
 			messages = append(messages, chatMessage{Role: "user", Content: h.Question})
 			messages = append(messages, chatMessage{Role: "assistant", Content: h.Answer})
@@ -315,11 +186,18 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig) {
 		writeJSON(w, http.StatusOK, WhatIfResponse{Answer: content})
 	})
 
-	// POST /ai/summary — generate post-session summary
+	// POST /ai/summary (cached)
 	mux.HandleFunc("POST /ai/summary", func(w http.ResponseWriter, r *http.Request) {
 		var req SummaryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+
+		// Check cache first
+		if cached, ok := summaryCache.Get(req); ok {
+			log.Printf("summary cache hit")
+			writeJSON(w, http.StatusOK, cached)
 			return
 		}
 
@@ -339,10 +217,12 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, SummaryResponse{Summary: content})
+		resp := SummaryResponse{Summary: content}
+		summaryCache.Set(req, resp)
+		writeJSON(w, http.StatusOK, resp)
 	})
 
-	// POST /ai/test — test LLM connectivity
+	// POST /ai/test
 	mux.HandleFunc("POST /ai/test", func(w http.ResponseWriter, r *http.Request) {
 		content, err := callLLM(cfg, []chatMessage{
 			{Role: "user", Content: "Say 'OK' if you can hear me."},

@@ -1,11 +1,10 @@
 package com.meshvisualiser.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -21,6 +20,7 @@ import com.meshvisualiser.simulation.CsmaState
 import com.meshvisualiser.simulation.CsmacdState
 import com.meshvisualiser.ui.theme.*
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun CsmacdOverlay(
     csmaState: CsmacdState,
@@ -35,10 +35,7 @@ fun CsmacdOverlay(
             CsmaState.BACKOFF -> CsmaBackoff
             CsmaState.SUCCESS -> CsmaTransmitting
         },
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "csmaColor"
     )
 

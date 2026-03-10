@@ -15,10 +15,12 @@ import io.github.sceneview.math.Size
 import io.github.sceneview.node.CylinderNode
 import io.github.sceneview.node.ImageNode
 import io.github.sceneview.node.SphereNode
+import kotlin.math.asin
 import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 import androidx.core.graphics.createBitmap
-import kotlin.math.asin
 
 /**
  * Owns all AR node lifecycle for the mesh visualiser.
@@ -52,7 +54,16 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         val worldZ: Float
     )
 
+    private data class GhostNodes(
+        val sphere: SphereNode,
+        val label: ImageNode?,
+        val worldX: Float,
+        val worldY: Float,
+        val worldZ: Float
+    )
+
     private val peerNodes = mutableMapOf<Long, PeerNodes>()
+    private val ghostNodes = mutableMapOf<Long, GhostNodes>()
     private var localSphere: SphereNode? = null
     private var localLabel: ImageNode?  = null
     private var localWorldPos: Triple<Float, Float, Float>? = null
@@ -129,8 +140,54 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         peerNodes.remove(peerId)?.destroySafely()
     }
 
+    // Ghost nodes for peers without poses
+    fun hasGhost(peerId: Long): Boolean = ghostNodes.containsKey(peerId)
+
+    fun placeGhostNode(peerId: Long, name: String) {
+        if (hasGhost(peerId) || hasPeer(peerId)) return
+        val lp = localWorldPos ?: return
+        try {
+            // Place ghost in a circle around local node
+            val count = ghostNodes.size
+            val angle = count * (2.0 * Math.PI / 6.0) // Up to 6 positions
+            val radius = 0.5f
+            val wx = lp.first + (radius * cos(angle)).toFloat()
+            val wy = lp.second
+            val wz = lp.third + (radius * sin(angle)).toFloat()
+
+            val mat = sceneView.materialLoader.createColorInstance(
+                color = Color(0.2f, 0.8f, 1.0f, 0.3f), // translucent
+                metallic = 0f, roughness = 0.5f, reflectance = 0.5f
+            )
+            val sphere = SphereNode(
+                engine = sceneView.engine, radius = PEER_SPHERE_RADIUS, materialInstance = mat
+            ).also { it.position = Position(wx, wy, wz); sceneView.addChildNode(it) }
+
+            val labelNode = buildLabel(peerId, "$name (Syncing...)", wx, wy, wz)
+            ghostNodes[peerId] = GhostNodes(sphere, labelNode, wx, wy, wz)
+            Log.d(TAG, "Ghost node placed for $peerId")
+        } catch (e: Exception) {
+            Log.e(TAG, "placeGhostNode error: ${e.message}")
+        }
+    }
+
+    fun promoteGhost(peerId: Long) {
+        ghostNodes.remove(peerId)?.let { ghost ->
+            runCatching { sceneView.removeChildNode(ghost.sphere) }
+            runCatching { ghost.sphere.destroy() }
+            ghost.label?.destroyImageNodeSafely()
+        }
+    }
+
     fun clearAll() {
         peerNodes.keys.toList().forEach { removePeer(it) }
+        ghostNodes.keys.toList().forEach { id ->
+            ghostNodes.remove(id)?.let { ghost ->
+                runCatching { sceneView.removeChildNode(ghost.sphere) }
+                runCatching { ghost.sphere.destroy() }
+                ghost.label?.destroyImageNodeSafely()
+            }
+        }
         localLabel?.destroyImageNodeSafely()  // handles removeChildNode + destroy + MI destroy
         runCatching { localSphere?.let { sceneView.removeChildNode(it) } }
         runCatching { localSphere?.destroy() }
@@ -144,6 +201,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         val camPos = sceneView.cameraNode.worldPosition
         localLabel?.billboardYaw(camPos)
         peerNodes.values.forEach { it.label?.billboardYaw(camPos) }
+        ghostNodes.values.forEach { it.label?.billboardYaw(camPos) }
 
         val now = System.currentTimeMillis()
         if (now - lastCylinderUpdateMs >= CYLINDER_UPDATE_INTERVAL_MS) {

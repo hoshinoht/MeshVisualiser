@@ -18,12 +18,12 @@ import java.util.concurrent.TimeUnit
  * The backend handles LLM configuration and prompt construction.
  */
 class AiClient(
-    private var serverBaseUrl: String = DEFAULT_SERVER_URL
+    private var serverBaseUrl: String = DEFAULT_SERVER_URL,
+    private var apiKey: String = ""
 ) {
     companion object {
         private const val TAG = "AiClient"
-        // emulator → host localhost
-        const val DEFAULT_SERVER_URL = "http://10.0.2.2:8080"
+        const val DEFAULT_SERVER_URL = "https://mesh.hoshinoht.dev"
         private const val TIMEOUT_SECONDS = 60L
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
@@ -36,11 +36,9 @@ class AiClient(
 
     private val gson = Gson()
 
-    fun updateServerUrl(url: String) {
-        serverBaseUrl = url.trimEnd('/')
+    fun updateApiKey(key: String) {
+        apiKey = key
     }
-
-    fun getServerUrl(): String = serverBaseUrl
 
     // ── Narrate ──
 
@@ -135,6 +133,7 @@ class AiClient(
             try {
                 val request = Request.Builder()
                     .url("$serverBaseUrl$path")
+                    .apply { if (apiKey.isNotEmpty()) addHeader("X-API-Key", apiKey) }
                     .get()
                     .build()
 
@@ -152,6 +151,7 @@ class AiClient(
                 val json = gson.toJson(body)
                 val request = Request.Builder()
                     .url("$serverBaseUrl$path")
+                    .apply { if (apiKey.isNotEmpty()) addHeader("X-API-Key", apiKey) }
                     .post(json.toRequestBody(JSON_MEDIA_TYPE))
                     .build()
 
@@ -169,6 +169,7 @@ class AiClient(
                 val json = gson.toJson(body)
                 val request = Request.Builder()
                     .url("$serverBaseUrl$path")
+                    .apply { if (apiKey.isNotEmpty()) addHeader("X-API-Key", apiKey) }
                     .put(json.toRequestBody(JSON_MEDIA_TYPE))
                     .build()
 

@@ -9,3 +9,6 @@ sdk.dir=/path/to/your/Android/sdk
 # 4. Create an API key under Credentials
 # 5. (Recommended) Restrict the key to "ARCore API" only
 ARCORE_CLOUD_ANCHOR_API_KEY=your_api_key_here
+
+# Mesh server API key (for Cloudflare tunnel auth)
+MESH_SERVER_API_KEY=your_api_key_here

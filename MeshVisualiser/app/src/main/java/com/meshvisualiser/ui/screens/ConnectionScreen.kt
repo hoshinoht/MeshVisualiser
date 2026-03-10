@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.*
 import androidx.compose.ui.graphics.Color
@@ -20,7 +19,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.PeerInfo
 import com.meshvisualiser.ui.ConnectionFlowState
+import com.meshvisualiser.ui.components.DiscoveryRadar
 import com.meshvisualiser.ui.components.GlassSurface
+import com.meshvisualiser.ui.components.HardwareChecklist
+import com.meshvisualiser.ui.components.HardwareIssue
+import com.meshvisualiser.ui.components.HardwareType
 import com.meshvisualiser.ui.theme.StatusConnected
 
 @Composable
@@ -38,9 +41,24 @@ fun ConnectionScreen(
     groupCodeError: String?,
     isDiscovering: Boolean = false,
     isAdvertising: Boolean = false,
-    nearbyError: String? = null
+    nearbyError: String? = null,
+    hardwareIssues: List<HardwareIssue> = emptyList(),
+    onEnableHardware: (HardwareType) -> Unit = {},
+    discoveryTimeoutReached: Boolean = false,
+    onRetryDiscovery: () -> Unit = {}
 ) {
     val validPeerCount = peers.values.count { it.hasValidPeerId }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(nearbyError) {
+        nearbyError?.let { error ->
+            val result = snackbarHostState.showSnackbar(
+                message = error,
+                actionLabel = "Dismiss",
+                duration = SnackbarDuration.Long
+            )
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -175,71 +193,25 @@ fun ConnectionScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Discovery status indicators
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                val discoveringColor = if (isDiscovering) StatusConnected else MaterialTheme.colorScheme.error
-                                val advertisingColor = if (isAdvertising) StatusConnected else MaterialTheme.colorScheme.error
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(discoveringColor)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = if (isDiscovering) "Discovering" else "Not discovering",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(advertisingColor)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = if (isAdvertising) "Advertising" else "Not advertising",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                            // Hardware readiness
+                            if (hardwareIssues.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                HardwareChecklist(
+                                    issues = hardwareIssues,
+                                    onEnableAction = onEnableHardware
+                                )
                             }
 
-                            // Error banner
-                            if (nearbyError != null) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Surface(
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    shape = MaterialTheme.shapes.small,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.Top
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Error,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp),
-                                            tint = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = nearbyError,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    }
-                                }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                DiscoveryRadar(
+                                    isActive = isDiscovering || isAdvertising,
+                                    peerCount = validPeerCount
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -297,6 +269,33 @@ fun ConnectionScreen(
                                 }
                             }
 
+                            // Discovery troubleshooting
+                            AnimatedVisibility(visible = discoveryTimeoutReached && validPeerCount == 0) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(
+                                            text = "Having trouble finding peers?",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "• Make sure other devices are nearby and using the same group code\n• Try turning Bluetooth off and on\n• Ensure Location services are enabled",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Button(onClick = onRetryDiscovery) {
+                                            Text("Retry")
+                                        }
+                                    }
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(16.dp))
 
                             Button(
@@ -330,5 +329,10 @@ fun ConnectionScreen(
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 }

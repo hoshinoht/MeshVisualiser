@@ -36,6 +36,7 @@
 
     <application
         android:name=".MeshVisualizerApp"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:hardwareAccelerated="true"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

@@ -1,14 +1,13 @@
 package com.meshvisualiser.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +22,7 @@ import com.meshvisualiser.quiz.QuizState
 import com.meshvisualiser.ui.theme.LogAck
 import com.meshvisualiser.ui.theme.LogError
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun QuizOverlay(
     quizState: QuizState,
@@ -34,7 +34,7 @@ fun QuizOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.7f))
+            .background(Color.Black.copy(alpha = 0.5f))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -73,6 +73,7 @@ fun QuizOverlay(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun QuestionScreen(
     questionIndex: Int,
@@ -88,6 +89,12 @@ private fun QuestionScreen(
     onNext: () -> Unit,
     onClose: () -> Unit
 ) {
+    val timerScale by animateFloatAsState(
+        targetValue = if (timerSeconds <= 5 && !isRevealed) 1.2f else 1f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "timerPulse"
+    )
+
     Column(modifier = Modifier.padding(20.dp)) {
         // Header: progress + score + timer
         Row(
@@ -107,7 +114,7 @@ private fun QuestionScreen(
             )
             // Timer
             Box(
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(40.dp).scale(timerScale),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(
@@ -162,19 +169,13 @@ private fun QuestionScreen(
                     isSelected -> LogError.copy(alpha = 0.3f)
                     else -> MaterialTheme.colorScheme.surfaceVariant
                 },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
-                ),
+                animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
                 label = "optionColor"
             )
 
             val scale by animateFloatAsState(
                 targetValue = if (isSelected && isRevealed) 1.02f else 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMedium
-                ),
+                animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
                 label = "optionScale"
             )
 

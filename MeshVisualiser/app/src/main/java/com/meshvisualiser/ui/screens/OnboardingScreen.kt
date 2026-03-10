@@ -6,9 +6,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -18,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +30,7 @@ import com.meshvisualiser.ui.PermissionHelper
 import com.meshvisualiser.ui.components.GlassSurface
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun OnboardingScreen(
     onComplete: () -> Unit
@@ -129,12 +129,12 @@ fun OnboardingScreen(
                             MaterialTheme.colorScheme.primary
                         else
                             MaterialTheme.colorScheme.surfaceVariant,
-                        animationSpec = spring(stiffness = Spring.StiffnessLow),
+                        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
                         label = "dotColor"
                     )
                     val width by animateDpAsState(
                         targetValue = if (isActive) 24.dp else 8.dp,
-                        animationSpec = spring(dampingRatio = 0.7f),
+                        animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
                         label = "dotWidth"
                     )
                     Box(

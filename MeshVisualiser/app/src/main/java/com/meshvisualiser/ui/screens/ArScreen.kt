@@ -3,13 +3,16 @@ package com.meshvisualiser.ui.screens
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -64,16 +67,76 @@ private class ManagedARSceneView(
 }
 
 // Fully isolated composable recomposition never touches the AndroidView
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ArHud(
     peers: Map<String, PeerInfo>,
     selectedPeerId: Long?,
+    syncedPeerCount: Int,
+    totalPeerCount: Int,
     onSelectPeer: (Long?) -> Unit,
     onSendTcp: () -> Unit,
     onSendUdp: () -> Unit,
     onBack: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text("AR View", style = MaterialTheme.typography.titleMedium) },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                titleContentColor = Color.White,
+                navigationIconContentColor = Color.White
+            ),
+            modifier = Modifier.align(Alignment.TopStart)
+        )
+
+        // Color legend - top right
+        Surface(
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 48.dp, end = 16.dp)
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                LegendItem(color = COLOR_TCP, label = "TCP")
+                LegendItem(color = COLOR_UDP, label = "UDP")
+                LegendItem(color = COLOR_ACK, label = "ACK")
+                LegendItem(color = COLOR_DROP, label = "DROP")
+            }
+        }
+
+        // Pose sync indicator
+        if (totalPeerCount > 0 && syncedPeerCount < totalPeerCount) {
+            Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 156.dp, end = 16.dp)
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text(
+                        text = "Synced: $syncedPeerCount/$totalPeerCount peers",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { syncedPeerCount.toFloat() / totalPeerCount.coerceAtLeast(1) },
+                        modifier = Modifier.width(100.dp).height(4.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                }
+            }
+        }
+
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -156,12 +219,27 @@ private fun ArHud(
             }
         }
 
-        FloatingActionButton(
-            onClick = onBack,
-            modifier = Modifier.align(Alignment.BottomStart).padding(24.dp),
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+    }
+}
+
+@Composable
+private fun LegendItem(color: Color, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(vertical = 2.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -304,9 +382,14 @@ fun ArScreen(
             )
         }
 
+        val validPeers = peers.values.filter { it.hasValidPeerId }
+        val syncedCount = validPeers.count { it.relativeX != 0f || it.relativeY != 0f || it.relativeZ != 0f }
+
         ArHud(
             peers = peers,
             selectedPeerId = selectedPeerId,
+            syncedPeerCount = syncedCount,
+            totalPeerCount = validPeers.size,
             onSelectPeer = { viewModel.selectPeer(it) },
             onSendTcp = { viewModel.sendTcpData() },
             onSendUdp = { viewModel.sendUdpData() },

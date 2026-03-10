@@ -12,7 +12,6 @@ import com.meshvisualiser.ui.MainScreen
 import com.meshvisualiser.ui.MainViewModel
 import com.meshvisualiser.ui.screens.ConnectionScreen
 import com.meshvisualiser.ui.screens.OnboardingScreen
-import com.meshvisualiser.ui.screens.QuizScreen
 
 @Composable
 fun MeshNavHost(
@@ -34,6 +33,8 @@ fun MeshNavHost(
     val nearbyIsDiscovering by viewModel.nearbyIsDiscovering.collectAsStateWithLifecycle()
     val nearbyIsAdvertising by viewModel.nearbyIsAdvertising.collectAsStateWithLifecycle()
     val nearbyError by viewModel.nearbyError.collectAsStateWithLifecycle()
+    val hardwareIssues by viewModel.hardwareIssues.collectAsStateWithLifecycle()
+    val discoveryTimeoutReached by viewModel.discoveryTimeoutReached.collectAsStateWithLifecycle()
 
     // Reactive navigation: when any peer (local or remote) triggers START_MESH,
     // the ViewModel emits on navigateToMesh and we navigate here.
@@ -72,21 +73,22 @@ fun MeshNavHost(
                 groupCodeError = groupCodeError,
                 isDiscovering = nearbyIsDiscovering,
                 isAdvertising = nearbyIsAdvertising,
-                nearbyError = nearbyError
+                nearbyError = nearbyError,
+                hardwareIssues = hardwareIssues,
+                onEnableHardware = { /* Open system settings — handled by OS intents */ },
+                discoveryTimeoutReached = discoveryTimeoutReached,
+                onRetryDiscovery = { viewModel.retryDiscovery() }
             )
         }
 
         composable(Routes.MESH) {
             MainScreen(
                 viewModel = viewModel,
-                onNavigateToQuiz = { navController.navigate(Routes.QUIZ) },
                 onNavigateToAr = {
-                    // 1. Check camera permission
                     if (!cameraPermissionGranted) {
                         onRequestCameraPermission()
                         return@MainScreen
                     }
-                    // 2. Check ARCore is installed and up to date
                     onCheckArCoreAvailable { available ->
                         if (available) navController.navigate(Routes.AR)
                     }
@@ -101,17 +103,5 @@ fun MeshNavHost(
            )
         }
 
-        composable(Routes.QUIZ) {
-            val quizState by viewModel.quizState.collectAsStateWithLifecycle()
-            QuizScreen(
-                quizState = quizState,
-                onAnswer = { viewModel.answerQuiz(it) },
-                onNext = { viewModel.nextQuestion() },
-                onClose = {
-                    viewModel.closeQuiz()
-                    navController.popBackStack()
-                }
-            )
-        }
     }
 }
