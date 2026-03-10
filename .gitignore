@@ -95,6 +95,9 @@ test-results/
 # Go
 server/mesh-server
 
+# Environment files
+.env
+
 # claude
 /.claude
 CLAUDE.md

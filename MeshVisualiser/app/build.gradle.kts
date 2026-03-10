@@ -15,11 +15,11 @@ val localProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.example.meshvisualiser"
+    namespace = "com.meshvisualiser"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.meshvisualiser"
+        applicationId = "com.meshvisualiser"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -32,6 +32,13 @@ android {
             "String",
             "ARCORE_CLOUD_ANCHOR_API_KEY",
             "\"${localProperties.getProperty("ARCORE_CLOUD_ANCHOR_API_KEY", "")}\""
+        )
+
+        // Mesh server API key — set in local.properties
+        buildConfigField(
+            "String",
+            "MESH_SERVER_API_KEY",
+            "\"${localProperties.getProperty("MESH_SERVER_API_KEY", "")}\""
         )
     }
 
@@ -120,6 +127,12 @@ dependencies {
 
     // JSON serialization
     implementation("com.google.code.gson:gson:2.11.0")
+
+    // HTTP client for LLM API
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Markdown rendering
+    implementation("com.github.jeziellago:compose-markdown:0.6.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
