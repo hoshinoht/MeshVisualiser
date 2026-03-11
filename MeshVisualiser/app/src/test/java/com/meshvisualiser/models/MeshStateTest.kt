@@ -10,7 +10,8 @@ class MeshStateTest {
         val states = MeshState.entries.map { it.name }
         assertTrue(states.contains("DISCOVERING"))
         assertTrue(states.contains("ELECTING"))
+        assertTrue(states.contains("RESOLVING"))
         assertTrue(states.contains("CONNECTED"))
-        assertEquals(3, states.size)
+        assertEquals(4, states.size)
     }
 }
