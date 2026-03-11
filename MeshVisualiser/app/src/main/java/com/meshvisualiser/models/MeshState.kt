@@ -10,6 +10,9 @@ enum class MeshState {
     /** Running the Bully Algorithm to elect a leader */
     ELECTING,
 
-    /** Fully connected — local anchor placed, exchanging poses */
+    /** Leader is hosting / followers are resolving the Cloud Anchor */
+    RESOLVING,
+
+    /** Fully connected — shared anchor established, exchanging poses */
     CONNECTED
 }

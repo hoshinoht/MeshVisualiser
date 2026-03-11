@@ -71,9 +71,16 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     private var lastCylinderUpdateMs = 0L
     private val CYLINDER_UPDATE_INTERVAL_MS = 5_000L
 
-    // Local node (Origin)
+    // Local node — represents this device
     fun placeLocalNode(wx: Float, wy: Float, wz: Float, displayName: String) {
-        if (localSphere != null) return
+        if (localSphere != null) {
+            // Already exists — reposition (e.g. after cloud anchor resolve)
+            localSphere?.position = Position(wx, wy, wz)
+            localLabel?.position = Position(wx, wy + LABEL_Y_OFFSET, wz)
+            localWorldPos = Triple(wx, wy, wz)
+            Log.d(TAG, "Local node repositioned to ($wx, $wy, $wz)")
+            return
+        }
         try {
             val mat = sceneView.materialLoader.createColorInstance(
                 color = Color(1f, 0.8f, 0.2f, 1f),
@@ -93,6 +100,13 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         } catch (e: Exception) {
             Log.e(TAG, "placeLocalNode error: ${e.message}")
         }
+    }
+
+    /** Efficiently update the local node position each frame (no rebuild). */
+    fun updateLocalPosition(wx: Float, wy: Float, wz: Float) {
+        localSphere?.position = Position(wx, wy, wz)
+        localLabel?.position = Position(wx, wy + LABEL_Y_OFFSET, wz)
+        localWorldPos = Triple(wx, wy, wz)
     }
 
     // Peer nodes
@@ -226,38 +240,31 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         rotation = Rotation(0f, yawDeg, 0f)
     }
 
-    // Cylinder orientation
+    // Cylinder orientation — CylinderNode default axis is Y-up.
+    // We need to rotate so the Y-axis aligns with the from→to direction.
     private fun positionCylinder(cylinder: CylinderNode, from: FloatArray, to: FloatArray) {
         val dx = to[0] - from[0]; val dy = to[1] - from[1]; val dz = to[2] - from[2]
         val length = sqrt(dx * dx + dy * dy + dz * dz)
         if (length < 0.001f) return
 
-        cylinder.position = Position((from[0]+to[0])/2f, (from[1]+to[1])/2f, (from[2]+to[2])/2f)
+        cylinder.position = Position(
+            (from[0] + to[0]) / 2f,
+            (from[1] + to[1]) / 2f,
+            (from[2] + to[2]) / 2f
+        )
         cylinder.updateGeometry(height = length)
 
-        val ux = dx/length; val uy = dy/length; val uz = dz/length
+        // Direction unit vector
+        val ux = dx / length; val uy = dy / length; val uz = dz / length
 
-        if (uy > 0.9999f) { cylinder.rotation = Rotation(0f,   0f, 0f); return }
-        if (uy < -0.9999f) { cylinder.rotation = Rotation(180f, 0f, 0f); return }
+        // Pitch: rotation around X to tilt from Y-up toward the direction's vertical component
+        // Yaw: rotation around Y to aim in the XZ plane
+        // The cylinder's natural axis is Y. We rotate Z first (pitch) then Y (yaw).
+        val horizontalDist = sqrt(ux * ux + uz * uz)
+        val pitchDeg = -Math.toDegrees(atan2(horizontalDist.toDouble(), uy.toDouble())).toFloat()
+        val yawDeg = Math.toDegrees(atan2(ux.toDouble(), uz.toDouble())).toFloat()
 
-        val axZ = -ux
-        val axLen = sqrt(uz * uz + axZ * axZ)
-        val cosHalf = sqrt((1f + uy) / 2f)
-        val sinHalf = sqrt((1f - uy) / 2f)
-        val nAxX = uz / axLen; val nAxZ = axZ / axLen
-
-        val qx = nAxX * sinHalf; val qy = 0f; val qz = nAxZ * sinHalf
-
-        val sinRcosP = 2f*(cosHalf * qx + qy*qz); val cosRcosP = 1f - 2f*(qx*qx + qy*qy)
-        val rollDeg = Math.toDegrees(atan2(sinRcosP.toDouble(), cosRcosP.toDouble())).toFloat()
-        val sinP = 2f*(cosHalf * qy - qz*qx)
-        val pitchDeg = Math.toDegrees(
-            if (sinP >= 1f) Math.PI/2 else if (sinP <= -1f) -Math.PI/2 else asin(sinP.toDouble())
-        ).toFloat()
-        val sinYcosP = 2f*(cosHalf * qz + qx*qy); val cosYcosP = 1f - 2f*(qy*qy + qz*qz)
-        val yawDeg = Math.toDegrees(atan2(sinYcosP.toDouble(), cosYcosP.toDouble())).toFloat()
-
-        cylinder.rotation = Rotation(rollDeg, yawDeg, pitchDeg)
+        cylinder.rotation = Rotation(pitchDeg, yawDeg, 0f)
     }
 
     // Label builder (NAME Bitmap)

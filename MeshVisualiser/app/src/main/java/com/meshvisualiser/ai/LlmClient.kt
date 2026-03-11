@@ -126,6 +126,28 @@ class AiClient(
     suspend fun testConnection(): Result<TestResponse> =
         post("/ai/test", emptyMap<String, String>(), TestResponse::class.java)
 
+    // ── Room / Anchor ──
+
+    data class AnchorResponse(
+        @SerializedName("anchor_id") val anchorId: String
+    )
+
+    suspend fun putAnchor(roomCode: String, anchorId: String): Result<Unit> =
+        put("/rooms/$roomCode/anchor", mapOf("anchor_id" to anchorId))
+
+    suspend fun getAnchor(roomCode: String): Result<AnchorResponse> =
+        get("/rooms/$roomCode/anchor", AnchorResponse::class.java)
+
+    data class LeaderResponse(
+        @SerializedName("leader_id") val leaderId: String
+    )
+
+    suspend fun putLeader(roomCode: String, leaderId: String): Result<Unit> =
+        put("/rooms/$roomCode/leader", mapOf("leader_id" to leaderId))
+
+    suspend fun getLeader(roomCode: String): Result<LeaderResponse> =
+        get("/rooms/$roomCode/leader", LeaderResponse::class.java)
+
     // ── HTTP helpers ──
 
     private suspend fun <T> get(path: String, responseType: Class<T>): Result<T> =

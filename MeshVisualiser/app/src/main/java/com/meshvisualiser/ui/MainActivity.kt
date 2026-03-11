@@ -262,7 +262,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
         }
 
         // Bottom: Persistent control bar + floating toolbar
-        if (meshState == MeshState.CONNECTED) {
+        if (meshState == MeshState.RESOLVING || meshState == MeshState.CONNECTED) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -538,6 +538,7 @@ fun StatusOverlay(
         targetValue = when (meshState) {
             MeshState.DISCOVERING -> StatusDiscovering
             MeshState.ELECTING -> StatusElecting
+            MeshState.RESOLVING -> StatusElecting
             MeshState.CONNECTED -> StatusConnected
         },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),

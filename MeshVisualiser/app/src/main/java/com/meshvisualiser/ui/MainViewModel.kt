@@ -367,6 +367,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _statusMessage.value = when (state) {
             MeshState.DISCOVERING -> "Finding nearby peers..."
             MeshState.ELECTING -> "Electing leader via Bully Algorithm..."
+            MeshState.RESOLVING -> "Establishing shared AR anchor..."
             MeshState.CONNECTED -> {
                 val leaderName = _peers.value.values.find { it.peerId == _currentLeaderId.value }?.deviceModel
                 if (_isLeader.value) "Mesh connected — you are the leader"
@@ -852,6 +853,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!isInitialized) return
         Log.d(TAG, "Broadcasting cloud anchor ID: $cloudAnchorId")
         nearbyManager.broadcastMessage(MeshMessage.coordinator(localId, cloudAnchorId))
+    }
+
+    // Cloud anchor status visible in AR HUD
+    private val _cloudAnchorStatus = MutableStateFlow<String?>(null)
+    val cloudAnchorStatus: StateFlow<String?> = _cloudAnchorStatus.asStateFlow()
+
+    /** Called from ArScreen with feature map quality updates (leader only). */
+    fun onCloudAnchorQuality(message: String) {
+        _cloudAnchorStatus.value = message
+    }
+
+    private val roomCode: String
+        get() = _groupCode.value.uppercase().replace("-", "")
+
+    /** Called from ArScreen when the leader successfully hosts a cloud anchor. */
+    fun onCloudAnchorHosted(cloudAnchorId: String) {
+        _cloudAnchorId.value = cloudAnchorId
+        _cloudAnchorStatus.value = "Shared anchor ready"
+        broadcastCloudAnchorId(cloudAnchorId)
+
+        // Store anchor + leader on server for late joiners
+        viewModelScope.launch {
+            aiClient.putAnchor(roomCode, cloudAnchorId)
+                .onFailure { Log.e(TAG, "Failed to store anchor on server: ${it.message}") }
+            aiClient.putLeader(roomCode, localId.toString())
+                .onFailure { Log.e(TAG, "Failed to store leader on server: ${it.message}") }
+        }
+    }
+
+    /** Called from ArScreen when a follower successfully resolves the cloud anchor. */
+    fun onCloudAnchorResolved() {
+        _cloudAnchorStatus.value = "Shared anchor resolved"
+    }
+
+    /** Called from ArScreen when cloud anchor hosting or resolution fails. */
+    fun onCloudAnchorError(message: String) {
+        Log.e(TAG, "Cloud anchor error: $message")
+        _cloudAnchorStatus.value = "Anchor failed: $message"
+    }
+
+    /**
+     * Follower fallback: fetch cloud anchor ID from server if the COORDINATOR
+     * message was missed (e.g. late joiner).
+     */
+    fun fetchAnchorFromServer() {
+        if (_cloudAnchorId.value != null) return
+        viewModelScope.launch {
+            aiClient.getAnchor(roomCode).onSuccess { resp ->
+                if (resp.anchorId.isNotBlank() && _cloudAnchorId.value == null) {
+                    Log.d(TAG, "Got anchor from server: ${resp.anchorId}")
+                    _cloudAnchorId.value = resp.anchorId
+                }
+            }.onFailure {
+                Log.d(TAG, "No anchor on server yet: ${it.message}")
+            }
+        }
     }
 
     /**

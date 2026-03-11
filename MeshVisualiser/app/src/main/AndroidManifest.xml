@@ -49,6 +49,10 @@
         <!-- ARCore: "optional" means ARCore is not required for the app to install -->
         <meta-data android:name="com.google.ar.core" android:value="optional" />
 
+        <!-- ARCore Cloud Anchor API key (injected from local.properties via build.gradle) -->
+        <meta-data android:name="com.google.android.ar.API_KEY"
+            android:value="${ARCORE_CLOUD_ANCHOR_API_KEY}" />
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"

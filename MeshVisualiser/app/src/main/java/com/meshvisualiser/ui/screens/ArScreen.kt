@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.meshvisualiser.ar.ArSessionManager
 import com.meshvisualiser.ar.ArNodeManager
+import com.meshvisualiser.ar.CloudAnchorManager
 import com.meshvisualiser.ar.PoseManager
 import com.meshvisualiser.models.PeerInfo
 import com.meshvisualiser.ui.MainViewModel
@@ -33,6 +34,7 @@ import com.google.android.filament.MaterialInstance
 import com.google.ar.core.Frame
 import com.google.ar.core.Pose
 import com.google.ar.core.Session
+import com.google.ar.core.Session.FeatureMapQuality
 import dev.romainguy.kotlin.math.Float3
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -74,6 +76,7 @@ private fun ArHud(
     selectedPeerId: Long?,
     syncedPeerCount: Int,
     totalPeerCount: Int,
+    cloudAnchorStatus: String?,
     onSelectPeer: (Long?) -> Unit,
     onSendTcp: () -> Unit,
     onSendUdp: () -> Unit,
@@ -111,28 +114,50 @@ private fun ArHud(
             }
         }
 
-        // Pose sync indicator
-        if (totalPeerCount > 0 && syncedPeerCount < totalPeerCount) {
-            Surface(
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 156.dp, end = 16.dp)
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
+        // Status pills — stacked below the legend
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 140.dp, end = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // Cloud anchor status
+            if (cloudAnchorStatus != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                    shape = MaterialTheme.shapes.small
+                ) {
                     Text(
-                        text = "Synced: $syncedPeerCount/$totalPeerCount peers",
+                        text = cloudAnchorStatus,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = if (cloudAnchorStatus.startsWith("Anchor failed"))
+                            MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(8.dp)
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LinearProgressIndicator(
-                        progress = { syncedPeerCount.toFloat() / totalPeerCount.coerceAtLeast(1) },
-                        modifier = Modifier.width(100.dp).height(4.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                }
+            }
+
+            // Pose sync indicator
+            if (totalPeerCount > 0 && syncedPeerCount < totalPeerCount) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        Text(
+                            text = "Synced: $syncedPeerCount/$totalPeerCount peers",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { syncedPeerCount.toFloat() / totalPeerCount.coerceAtLeast(1) },
+                            modifier = Modifier.width(100.dp).height(4.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -252,6 +277,9 @@ fun ArScreen(
     val selectedPeerId by viewModel.selectedPeerId.collectAsState()
     val packetEvents by viewModel.packetAnimEvents.collectAsState()
     val displayName by viewModel.displayName.collectAsState()
+    val cloudAnchorId by viewModel.cloudAnchorId.collectAsState()
+    val isLeader by viewModel.isLeader.collectAsState()
+    val cloudAnchorStatus by viewModel.cloudAnchorStatus.collectAsState()
 
     // rememberUpdatedState so lambdas inside AndroidView always read latest values
     val currentPeers by rememberUpdatedState(peers)
@@ -263,12 +291,31 @@ fun ArScreen(
     val sceneViewRef = remember { arrayOfNulls<ARSceneView>(1) }
     val nodeManagerRef = remember { arrayOfNulls<ArNodeManager>(1) }
     val sessionManagerRef = remember { arrayOfNulls<ArSessionManager>(1) }
+    val cloudAnchorManagerRef = remember { arrayOfNulls<CloudAnchorManager>(1) }
     val animatedEventIds = remember { mutableSetOf<Long>() }
     val allMaterials = remember { mutableListOf<MaterialInstance>() }
     val packetNodes = remember { mutableListOf<AnchorNode>() }
 
     DisposableEffect(Unit) {
         onDispose { isDisposed.value = true }
+    }
+
+    // Follower: resolve cloud anchor when ID arrives from leader
+    LaunchedEffect(cloudAnchorId) {
+        val id = cloudAnchorId ?: return@LaunchedEffect
+        if (isLeader) return@LaunchedEffect
+        sessionManagerRef[0]?.resolveCloudAnchor(id)
+    }
+
+    // Follower: if no cloud anchor ID yet, poll server as fallback
+    LaunchedEffect(isLeader, cloudAnchorId) {
+        if (isLeader || cloudAnchorId != null) return@LaunchedEffect
+        // Retry a few times with delay
+        repeat(6) {
+            delay(5_000)
+            if (cloudAnchorId != null) return@LaunchedEffect
+            viewModel.fetchAnchorFromServer()
+        }
     }
 
     //  Packet animations
@@ -330,14 +377,36 @@ fun ArScreen(
                         )
                     }
 
+                    val cam = CloudAnchorManager(
+                        onAnchorHosted = { cloudId, _ ->
+                            Log.d(TAG, "Cloud anchor hosted: $cloudId")
+                            sessionManagerRef[0]?.onCloudAnchorHosted()
+                            viewModel.onCloudAnchorHosted(cloudId)
+                        },
+                        onAnchorResolved = { anchor ->
+                            Log.d(TAG, "Cloud anchor resolved")
+                            sessionManagerRef[0]?.onCloudAnchorResolved(anchor)
+                            viewModel.onCloudAnchorResolved()
+                        },
+                        onError = { msg ->
+                            Log.e(TAG, "Cloud anchor error: $msg")
+                            viewModel.onCloudAnchorError(msg)
+                        }
+                    )
+                    cloudAnchorManagerRef[0] = cam
+
                     ManagedARSceneView(
                         context = ctx,
                         sessionConfiguration = { _, config ->
                             config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
                             config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
                             config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+                            config.cloudAnchorMode = Config.CloudAnchorMode.ENABLED
                         },
-                        onSessionCreated = { _ -> Log.d(TAG, "Session created") },
+                        onSessionCreated = { session ->
+                            Log.d(TAG, "Session created — configuring cloud anchors")
+                            cam.configureSession(session)
+                        },
                         onSessionUpdated = { session, frame ->
                             if (isDisposed.value) return@ManagedARSceneView
                             sessionManagerRef[0]?.onSessionUpdated(
@@ -352,7 +421,22 @@ fun ArScreen(
 
                         val nm = ArNodeManager(sv)
                         val localName = displayName.ifBlank { Build.MODEL }
-                        val sm = ArSessionManager(nm, poseManager, localName)
+                        val sm = ArSessionManager(
+                            nodeManager = nm,
+                            poseManager = poseManager,
+                            cloudAnchorManager = cam,
+                            localDeviceName = localName,
+                            isLeader = { viewModel.isLeader.value },
+                            onLocalAnchorReady = { /* follower local anchor ready, awaiting cloud ID */ },
+                            onFeatureMapQuality = { quality ->
+                                val msg = when (quality) {
+                                    FeatureMapQuality.INSUFFICIENT -> "Look around slowly to scan environment..."
+                                    FeatureMapQuality.SUFFICIENT -> "Hosting shared anchor..."
+                                    FeatureMapQuality.GOOD -> "Hosting shared anchor..."
+                                }
+                                viewModel.onCloudAnchorQuality(msg)
+                            }
+                        )
                         nodeManagerRef[0] = nm
                         sessionManagerRef[0] = sm
 
@@ -371,9 +455,11 @@ fun ArScreen(
 
                             nm.clearAll()
                             sm.reset()
+                            cam.cleanup()
 
                             nodeManagerRef[0] = null
                             sessionManagerRef[0] = null
+                            cloudAnchorManagerRef[0] = null
                             sceneViewRef[0] = null
                         }
                     }
@@ -390,6 +476,7 @@ fun ArScreen(
             selectedPeerId = selectedPeerId,
             syncedPeerCount = syncedCount,
             totalPeerCount = validPeers.size,
+            cloudAnchorStatus = cloudAnchorStatus,
             onSelectPeer = { viewModel.selectPeer(it) },
             onSendTcp = { viewModel.sendTcpData() },
             onSendUdp = { viewModel.sendUdpData() },
