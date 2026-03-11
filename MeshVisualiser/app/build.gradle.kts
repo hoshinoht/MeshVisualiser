@@ -34,6 +34,10 @@ android {
             "\"${localProperties.getProperty("ARCORE_CLOUD_ANCHOR_API_KEY", "")}\""
         )
 
+        // Pass API key to AndroidManifest.xml as a manifest placeholder
+        manifestPlaceholders["ARCORE_CLOUD_ANCHOR_API_KEY"] =
+            localProperties.getProperty("ARCORE_CLOUD_ANCHOR_API_KEY", "")
+
         // Mesh server API key — set in local.properties
         buildConfigField(
             "String",
