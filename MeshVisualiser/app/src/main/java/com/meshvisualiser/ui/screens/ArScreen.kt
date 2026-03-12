@@ -38,6 +38,7 @@ import com.google.ar.core.Session.FeatureMapQuality
 import dev.romainguy.kotlin.math.Float3
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.MyLocation
 
 private const val TAG = "ArScreen"
 
@@ -68,6 +69,12 @@ private class ManagedARSceneView(
     }
 }
 
+private sealed class FollowerState {
+    object WaitingForLeader : FollowerState()
+    object ConnectingToAnchor : FollowerState()
+    object AnchorResolved : FollowerState()
+}
+
 // Fully isolated composable recomposition never touches the AndroidView
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,12 +84,123 @@ private fun ArHud(
     syncedPeerCount: Int,
     totalPeerCount: Int,
     cloudAnchorStatus: String?,
+    isLeader: Boolean,
+    cloudAnchorId: String?,
+    anchorResolved: Boolean,
+    resolveTimedOut: Boolean,
     onSelectPeer: (Long?) -> Unit,
     onSendTcp: () -> Unit,
     onSendUdp: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onReposition: () -> Unit,
+    onSkipSync: () -> Unit
 ) {
+    // Derive follower state
+    val followerState = when {
+        isLeader -> null
+        cloudAnchorId == null -> FollowerState.WaitingForLeader
+        !anchorResolved -> FollowerState.ConnectingToAnchor
+        else -> FollowerState.AnchorResolved
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
+
+        // Follower overlay — blocks interaction until anchor is resolved
+        if (followerState != null && followerState != FollowerState.AnchorResolved) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(48.dp)
+                        )
+
+                        when (followerState) {
+                            FollowerState.WaitingForLeader -> {
+                                Text(
+                                    "Waiting for leader",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "The leader is scanning the environment to establish a shared anchor. Please wait...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                // Show peers so they know they're connected
+                                if (totalPeerCount > 0) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        shape = MaterialTheme.shapes.small
+                                    ) {
+                                        Text(
+                                            "Connected to $totalPeerCount peer${if (totalPeerCount > 1) "s" else ""}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            FollowerState.ConnectingToAnchor -> {
+                                Text(
+                                    "Connecting to shared anchor",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "Synchronising your view with the leader. Point your camera at the same area as the leader.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+
+                                // Show skip option after timeout
+                                if (resolveTimedOut) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        "Taking too long?",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    TextButton(onClick = onSkipSync) {
+                                        Text("Continue without sync", color = MaterialTheme.colorScheme.error)
+                                    }
+                                    Text(
+                                        "Peer positions may not align correctly.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+            }
+        }
+
+        // Top bar — always visible
         TopAppBar(
             title = { Text("AR View", style = MaterialTheme.typography.titleMedium) },
             navigationIcon = {
@@ -114,14 +232,13 @@ private fun ArHud(
             }
         }
 
-        // Status pills — stacked below the legend
+        // Status pills
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 140.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Cloud anchor status
             if (cloudAnchorStatus != null) {
                 Surface(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
@@ -138,7 +255,6 @@ private fun ArHud(
                 }
             }
 
-            // Pose sync indicator
             if (totalPeerCount > 0 && syncedPeerCount < totalPeerCount) {
                 Surface(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
@@ -153,7 +269,9 @@ private fun ArHud(
                         Spacer(modifier = Modifier.height(4.dp))
                         LinearProgressIndicator(
                             progress = { syncedPeerCount.toFloat() / totalPeerCount.coerceAtLeast(1) },
-                            modifier = Modifier.width(100.dp).height(4.dp),
+                            modifier = Modifier
+                                .width(100.dp)
+                                .height(4.dp),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
@@ -162,88 +280,109 @@ private fun ArHud(
             }
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(bottom = 96.dp, start = 16.dp, end = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val validPeers = peers.values.filter { it.hasValidPeerId }
+        // Bottom controls — only show when anchor resolved
+        if (followerState == null || followerState == FollowerState.AnchorResolved) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(bottom = 96.dp, start = 16.dp, end = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val validPeers = peers.values.filter { it.hasValidPeerId }
 
-            if (validPeers.isEmpty()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Text(
-                        "No peers connected",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(12.dp),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            } else {
-                // Peer selector chips
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                if (validPeers.isEmpty()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                        shape = MaterialTheme.shapes.medium
                     ) {
                         Text(
-                            "Target:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            "No peers connected",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                        validPeers.forEach { peer ->
-                            val isSelected = peer.peerId == selectedPeerId
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { onSelectPeer(if (isSelected) null else peer.peerId) },
-                                label = {
-                                    Text(
-                                        peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) },
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
+                    }
+                } else {
+                    // Reposition button — above peer controls
+                    TextButton(
+                        onClick = onReposition,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.MyLocation,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Reposition Node", style = MaterialTheme.typography.labelSmall)
+                    }
+
+                    // Peer selector chips
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Target:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            validPeers.forEach { peer ->
+                                val isSelected = peer.peerId == selectedPeerId
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { onSelectPeer(if (isSelected) null else peer.peerId) },
+                                    label = {
+                                        Text(
+                                            peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) },
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
-                }
 
-                // Send buttons
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                    shape = MaterialTheme.shapes.medium
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // Send buttons
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        shape = MaterialTheme.shapes.medium
                     ) {
-                        FilledTonalButton(
-                            onClick = onSendTcp,
-                            enabled = selectedPeerId != null,
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = COLOR_TCP.copy(alpha = 0.3f)
-                            )
-                        ) { Text("Send TCP", color = COLOR_TCP, style = MaterialTheme.typography.labelSmall) }
-
-                        FilledTonalButton(
-                            onClick = onSendUdp,
-                            enabled = selectedPeerId != null,
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = COLOR_UDP.copy(alpha = 0.3f)
-                            )
-                        ) { Text("Send UDP", color = COLOR_UDP, style = MaterialTheme.typography.labelSmall) }
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilledTonalButton(
+                                onClick = onSendTcp,
+                                enabled = selectedPeerId != null,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = COLOR_TCP.copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Text("Send TCP", color = COLOR_TCP, style = MaterialTheme.typography.labelSmall)
+                            }
+                            FilledTonalButton(
+                                onClick = onSendUdp,
+                                enabled = selectedPeerId != null,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = COLOR_UDP.copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Text("Send UDP", color = COLOR_UDP, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
                     }
                 }
             }
         }
-
     }
 }
 
@@ -273,6 +412,8 @@ fun ArScreen(
     viewModel: MainViewModel,
     onBack: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     val peers by viewModel.peers.collectAsState()
     val selectedPeerId by viewModel.selectedPeerId.collectAsState()
     val packetEvents by viewModel.packetAnimEvents.collectAsState()
@@ -295,25 +436,74 @@ fun ArScreen(
     val animatedEventIds = remember { mutableSetOf<Long>() }
     val allMaterials = remember { mutableListOf<MaterialInstance>() }
     val packetNodes = remember { mutableListOf<AnchorNode>() }
+    val resolveAttempt = remember { mutableStateOf(0) }
+    val anchorResolved by viewModel.anchorResolved.collectAsState()
+    val resolveStartTime = remember { mutableStateOf(0L) }
+    val resolveTimedOut = remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
-        onDispose { isDisposed.value = true }
+        val window = (context as? android.app.Activity)?.window
+        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            Log.e("CloudAnchorSync", "DisposableEffect onDispose fired — isDisposed set to true")
+            isDisposed.value = true
+            viewModel.onArScreenLeft()
+        }
+    }
+
+    LaunchedEffect(isLeader) {
+        Log.d("CloudAnchorSync", "isLeader changed to: $isLeader")
+    }
+    LaunchedEffect(cloudAnchorId) {
+        if (cloudAnchorId != null && !isLeader) {
+            resolveStartTime.value = System.currentTimeMillis()
+            delay(60_000) // 60 second timeout
+            if (!anchorResolved) {
+                resolveTimedOut.value = true
+                Log.w("CloudAnchorSync", "Follower: resolve timed out after 60s")
+            }
+        }
+    }
+    LaunchedEffect(peers.size) {
+        Log.d("CloudAnchorSync", "peers count changed to: ${peers.size}")
     }
 
     // Follower: resolve cloud anchor when ID arrives from leader
-    LaunchedEffect(cloudAnchorId) {
-        val id = cloudAnchorId ?: return@LaunchedEffect
-        if (isLeader) return@LaunchedEffect
-        sessionManagerRef[0]?.resolveCloudAnchor(id)
+    LaunchedEffect(cloudAnchorId, resolveAttempt.value) {
+        val id = cloudAnchorId ?: run {
+            Log.d("CloudAnchorSync", "Follower: no cloud anchor ID yet")
+            return@LaunchedEffect
+        }
+        if (isLeader) {
+            Log.d("CloudAnchorSync", "Skipping resolve — this device is leader")
+            return@LaunchedEffect
+        }
+        Log.d("CloudAnchorSync", "Follower: received cloud anchor ID=$id, attempt=${resolveAttempt.value}, waiting 3s...")
+        delay(3000L)
+        val sm = sessionManagerRef[0]
+        if (sm == null) {
+            Log.e("CloudAnchorSync", "Follower: sessionManager is NULL — will retry in 5s")
+            delay(5000L)
+            resolveAttempt.value++
+            return@LaunchedEffect
+        }
+        sm.resolveCloudAnchor(id)
     }
 
     // Follower: if no cloud anchor ID yet, poll server as fallback
-    LaunchedEffect(isLeader, cloudAnchorId) {
-        if (isLeader || cloudAnchorId != null) return@LaunchedEffect
-        // Retry a few times with delay
-        repeat(6) {
+    LaunchedEffect(isLeader) {
+        if (isLeader) return@LaunchedEffect
+        Log.d("CloudAnchorSync", "Follower: starting server polling loop")
+        var attempt = 0
+        while (viewModel.cloudAnchorId.value == null) {
             delay(5_000)
-            if (cloudAnchorId != null) return@LaunchedEffect
+            if (viewModel.cloudAnchorId.value != null) {
+                Log.d("CloudAnchorSync", "Follower: got ID during poll, stopping")
+                return@LaunchedEffect
+            }
+            attempt++
+            Log.d("CloudAnchorSync", "Follower: polling server attempt $attempt")
             viewModel.fetchAnchorFromServer()
         }
     }
@@ -371,6 +561,7 @@ fun ArScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
+                    Log.e("CloudAnchorSync", "AndroidView factory called — scene being created/recreated")
                     val poseManager = PoseManager { pd ->
                         if (!isDisposed.value) viewModel.broadcastPose(
                             pd.x, pd.y, pd.z, pd.qx, pd.qy, pd.qz, pd.qw
@@ -387,6 +578,9 @@ fun ArScreen(
                             Log.d(TAG, "Cloud anchor resolved")
                             sessionManagerRef[0]?.onCloudAnchorResolved(anchor)
                             viewModel.onCloudAnchorResolved()
+                        },
+                        onResolveFailed = {
+                            sessionManagerRef[0]?.onCloudAnchorResolveFailed()
                         },
                         onError = { msg ->
                             Log.e(TAG, "Cloud anchor error: $msg")
@@ -435,12 +629,17 @@ fun ArScreen(
                                     FeatureMapQuality.GOOD -> "Hosting shared anchor..."
                                 }
                                 viewModel.onCloudAnchorQuality(msg)
+                            },
+                            onResolveRetryNeeded = {    // ADD
+                                resolveAttempt.value++
+                                Log.d("CloudAnchorSync", "Follower: retry triggered, attempt=${resolveAttempt.value}")
                             }
                         )
                         nodeManagerRef[0] = nm
                         sessionManagerRef[0] = sm
 
                         sv.onBeforeDetach = {
+                            Log.e("CloudAnchorSync", "onBeforeDetach fired — about to destroy AR scene")
                             // Packet nodes are managed outside ArNodeManager, clean them up first
                             packetNodes.toList().forEach { node ->
                                 node.childNodes.toList().forEach { runCatching { it.destroy() } }
@@ -471,16 +670,27 @@ fun ArScreen(
         val validPeers = peers.values.filter { it.hasValidPeerId }
         val syncedCount = validPeers.count { it.relativeX != 0f || it.relativeY != 0f || it.relativeZ != 0f }
 
+
         ArHud(
             peers = peers,
             selectedPeerId = selectedPeerId,
             syncedPeerCount = syncedCount,
             totalPeerCount = validPeers.size,
             cloudAnchorStatus = cloudAnchorStatus,
+            isLeader = isLeader,
+            cloudAnchorId = cloudAnchorId,
+            anchorResolved = anchorResolved || isLeader && cloudAnchorStatus == "Shared anchor ready",
             onSelectPeer = { viewModel.selectPeer(it) },
             onSendTcp = { viewModel.sendTcpData() },
             onSendUdp = { viewModel.sendUdpData() },
-            onBack = onBack
+            onBack = onBack,
+            onReposition = { sessionManagerRef[0]?.repositionLocalNode() },
+            resolveTimedOut = resolveTimedOut.value,
+            onSkipSync = {
+                resolveTimedOut.value = false
+                // Force anchorResolved so UI unblocks
+                viewModel.onCloudAnchorResolved()
+            }
         )
     }
 }

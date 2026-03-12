@@ -21,6 +21,10 @@ class PoseManager(
     private var lastX = Float.NaN
     private var lastY = Float.NaN
     private var lastZ = Float.NaN
+    private var broadcastCount = 0
+    private val MAX_BROADCASTS = 10  // send 10 times to ensure at least one gets through
+
+
 
     fun setSharedAnchor(anchor: Anchor) {
         sharedAnchor = anchor
@@ -33,6 +37,7 @@ class PoseManager(
      */
     fun updatePose(camera: Camera) {
         val anchor = sharedAnchor ?: return
+        if (broadcastCount >= MAX_BROADCASTS) return
         try {
             val cameraPose: Pose = camera.pose
             val anchorPose: Pose = anchor.pose
@@ -52,6 +57,7 @@ class PoseManager(
             if (!hasMoved(x, y, z)) return
 
             lastX = x; lastY = y; lastZ = z
+            broadcastCount++
             onPoseCalculated(PoseData(x, y, z, qx, qy, qz, qw))
         } catch (e: Exception) {
             Log.e(TAG, "Error calculating relative pose: ${e.message}")
@@ -71,8 +77,15 @@ class PoseManager(
         return (dx * dx + dy * dy + dz * dz) >= MIN_POSE_DELTA_METRES * MIN_POSE_DELTA_METRES
     }
 
+    fun resetBroadcast() {
+        broadcastCount = 0
+        lastX = Float.NaN; lastY = Float.NaN; lastZ = Float.NaN
+        Log.d(TAG, "Pose broadcast reset")
+    }
+
     fun cleanup() {
         sharedAnchor = null
+        broadcastCount = 0
         lastX = Float.NaN; lastY = Float.NaN; lastZ = Float.NaN
     }
 }

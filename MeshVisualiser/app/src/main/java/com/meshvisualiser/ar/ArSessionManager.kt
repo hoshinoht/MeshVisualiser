@@ -17,7 +17,8 @@ class ArSessionManager(
     private val localDeviceName: String,
     private val isLeader: () -> Boolean,
     private val onLocalAnchorReady: (Anchor) -> Unit,
-    private val onFeatureMapQuality: (Session.FeatureMapQuality) -> Unit
+    private val onFeatureMapQuality: (Session.FeatureMapQuality) -> Unit,
+    private val onResolveRetryNeeded: () -> Unit
 ) {
     private var worldAnchor: Anchor? = null
     private var anchorInitiated: Boolean = false
@@ -25,12 +26,14 @@ class ArSessionManager(
     private var hostingRequested: Boolean = false
     private var resolveRequested: Boolean = false
     private var anchorPlacedTime: Long = 0L
+    private var localPositionLocked = false
+    private var lastResolvedAnchorId: String? = null
 
     companion object {
         /** Force hosting after this many ms even if quality is INSUFFICIENT. */
-        private const val HOSTING_TIMEOUT_MS = 10_000L
+        private const val HOSTING_TIMEOUT_MS = 20_000L
         /** Only check quality every N frames to avoid overhead. */
-        private const val QUALITY_CHECK_INTERVAL = 30
+        private const val QUALITY_CHECK_INTERVAL = 20
     }
 
     private var frameCount = 0
@@ -88,28 +91,30 @@ class ArSessionManager(
             val timedOut = elapsed >= HOSTING_TIMEOUT_MS
 
             if (timedOut) {
-                // Force host after timeout
                 hostingRequested = true
-                Log.d(TAG, "Hosting timeout reached (${elapsed}ms) — forcing host")
+                Log.d("CloudAnchorSync", "Leader: hosting timeout reached (${elapsed}ms) — forcing host")
                 onFeatureMapQuality(Session.FeatureMapQuality.SUFFICIENT)
                 cloudAnchorManager.hostAnchor(anchor)
             } else if (frameCount % QUALITY_CHECK_INTERVAL == 0) {
                 try {
                     val quality = session.estimateFeatureMapQualityForHosting(camera.pose)
+                    Log.d("CloudAnchorSync", "Leader: feature map quality=$quality, elapsed=${elapsed}ms")
                     onFeatureMapQuality(quality)
                     if (quality == Session.FeatureMapQuality.GOOD ||
                         quality == Session.FeatureMapQuality.SUFFICIENT) {
                         hostingRequested = true
-                        Log.d(TAG, "Feature map quality: $quality — hosting cloud anchor")
+                        Log.d("CloudAnchorSync", "Leader: quality sufficient — hosting cloud anchor")
                         cloudAnchorManager.hostAnchor(anchor)
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Feature map quality check failed: ${e.message}")
+                    Log.e("CloudAnchorSync", "Leader: feature map quality check failed — ${e.message}")
                 }
             }
         }
 
-        poseManager.updatePose(camera)
+        if (cloudAnchorReady) {
+            poseManager.updatePose(camera)
+        }
 
         // Place "You" node at camera XZ but slightly below so it doesn't clip.
         // Must match the broadcast pose (camera position) so other devices see
@@ -118,67 +123,99 @@ class ArSessionManager(
         val cx = camPose.tx()
         val cy = camPose.ty() - 0.15f
         val cz = camPose.tz()
-        localWorldPos = Triple(cx, cy, cz)
-        nodeManager.updateLocalPosition(cx, cy, cz)
+        if (!localPositionLocked) {
+            localWorldPos = Triple(cx, cy, cz)
+            nodeManager.updateLocalPosition(cx, cy, cz)
+
+            if (cloudAnchorReady) {
+                localPositionLocked = true
+            }
+        }
 
         nodeManager.updateLabelOrientations()
 
-        val peers = getPeers()
-        val anchorPose = anchor.pose
-        val ax = anchorPose.tx()
-        val ay = anchorPose.ty()
-        val az = anchorPose.tz()
+        if (cloudAnchorReady) {
+            val peers = getPeers()
+            val anchorPose = anchor.pose
+            val ax = anchorPose.tx()
+            val ay = anchorPose.ty()
+            val az = anchorPose.tz()
 
-        // Place peer nodes — real or ghost
-        peers.values.filter { it.hasValidPeerId }.forEach { peer ->
-            if (nodeManager.hasPeer(peer.peerId)) return@forEach
-
-            val hasPose = peer.relativeX != 0f || peer.relativeY != 0f || peer.relativeZ != 0f
-            if (!hasPose) {
-                if (!nodeManager.hasGhost(peer.peerId)) {
-                    val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
-                    nodeManager.placeGhostNode(peer.peerId, label)
+            // Place peer nodes — real or ghost
+            peers.values.filter { it.hasValidPeerId }.forEach { peer ->
+                val hasPose = peer.relativeX != 0f || peer.relativeY != 0f || peer.relativeZ != 0f
+                if (!hasPose) {
+                    if (!nodeManager.hasGhost(peer.peerId) && !nodeManager.hasPeer(peer.peerId)) {
+                        val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
+                        nodeManager.placeGhostNode(peer.peerId, label)
+                    }
+                    return@forEach
                 }
-                return@forEach
+
+                val wx = ax + peer.relativeX
+                val wy = ay + peer.relativeY
+                val wz = az + peer.relativeZ
+                val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
+
+                if (nodeManager.hasPeer(peer.peerId)) {
+                    // Already placed — update position in case they repositioned
+                    nodeManager.updatePeerPosition(peer.peerId, wx, wy, wz)
+                    return@forEach
+                }
+
+                nodeManager.promoteGhost(peer.peerId)
+                nodeManager.addPeer(peerId = peer.peerId, wx = wx, wy = wy, wz = wz, label = label)
+                Log.d(TAG, "Placed peer ${peer.peerId} at world ($wx, $wy, $wz)")
             }
 
-            nodeManager.promoteGhost(peer.peerId)
-
-            val wx = ax + peer.relativeX
-            val wy = ay + peer.relativeY
-            val wz = az + peer.relativeZ
-
-            val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
-            nodeManager.addPeer(peerId = peer.peerId, wx = wx, wy = wy, wz = wz, label = label)
-            Log.d(TAG, "Placed peer ${peer.peerId} at world ($wx, $wy, $wz)")
+            // Remove disconnected peers
+            val activeIds = peers.values.filter { it.hasValidPeerId }.map { it.peerId }.toSet()
+            nodeManager.peerIds()
+                .filter { it !in activeIds }
+                .forEach {
+                    nodeManager.removePeer(it)
+                    Log.d(TAG, "Removed disconnected peer $it")
+                }
+        } else {
+            Log.d(TAG, "Skipping peer placement — cloud anchor not ready yet")
         }
-
-        // Remove disconnected peers
-        val activeIds = peers.values.filter { it.hasValidPeerId }.map { it.peerId }.toSet()
-        nodeManager.peerIds()
-            .filter { it !in activeIds }
-            .forEach {
-                nodeManager.removePeer(it)
-                Log.d(TAG, "Removed disconnected peer $it")
-            }
     }
 
     fun onCloudAnchorHosted() {
+        nodeManager.clearPeers()
+        poseManager.resetBroadcast()
         cloudAnchorReady = true
         Log.d(TAG, "Cloud anchor hosted — pose broadcast enabled")
     }
 
     fun resolveCloudAnchor(cloudAnchorId: String) {
-        if (resolveRequested) return
+        // Allow re-resolve if anchor ID changed
+        if (resolveRequested && this.lastResolvedAnchorId == cloudAnchorId) {
+            Log.w("CloudAnchorSync", "Follower: resolve already requested for this ID, ignoring")
+            return
+        }
         resolveRequested = true
-        Log.d(TAG, "Follower — resolving cloud anchor: $cloudAnchorId")
+        lastResolvedAnchorId = cloudAnchorId
+        Log.d("CloudAnchorSync", "Follower: resolveCloudAnchor called with id=$cloudAnchorId")
         cloudAnchorManager.resolveAnchor(cloudAnchorId)
+    }
+
+    fun onCloudAnchorResolveFailed() {
+        resolveRequested = false
+        lastResolvedAnchorId = null
+        Log.d(TAG, "Resolve failed — resetting flag so retry is possible")
+        onResolveRetryNeeded()
+    }
+
+    fun repositionLocalNode() {
+        localPositionLocked = false
+        poseManager.resetBroadcast()
+        Log.d(TAG, "Local node reposition requested — will lock on next cloudAnchorReady frame")
     }
 
     fun onCloudAnchorResolved(resolvedAnchor: Anchor) {
         Log.d(TAG, "Cloud anchor resolved — replacing local anchor")
         runCatching { worldAnchor?.detach() }
-
         worldAnchor = resolvedAnchor
         poseManager.setSharedAnchor(resolvedAnchor)
 
@@ -188,7 +225,8 @@ class ArSessionManager(
         val wz = pose.tz()
         localWorldPos = Triple(wx, wy, wz)
         nodeManager.placeLocalNode(wx, wy, wz, localDeviceName)
-
+        nodeManager.clearPeers()
+        poseManager.resetBroadcast()
         cloudAnchorReady = true
         Log.d(TAG, "Shared anchor set — pose broadcast enabled")
     }
@@ -200,7 +238,9 @@ class ArSessionManager(
         cloudAnchorReady = false
         hostingRequested = false
         resolveRequested = false
+        lastResolvedAnchorId = null
         localWorldPos = null
         Log.d(TAG, "Session state reset")
+        localPositionLocked = false
     }
 }
