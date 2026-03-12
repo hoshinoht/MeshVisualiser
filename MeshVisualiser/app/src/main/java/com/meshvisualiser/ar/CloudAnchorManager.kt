@@ -20,6 +20,7 @@ import com.google.ar.core.Session
 class CloudAnchorManager(
     private val onAnchorHosted: (cloudAnchorId: String, anchor: Anchor) -> Unit,
     private val onAnchorResolved: (anchor: Anchor) -> Unit,
+    private val onResolveFailed: () -> Unit,
     private val onError: (message: String) -> Unit
 ) {
     companion object {
@@ -44,44 +45,52 @@ class CloudAnchorManager(
 
     fun hostAnchor(localAnchor: Anchor) {
         val session = this.session ?: run {
-            Log.e(TAG, "hostAnchor called before configureSession")
+            Log.e("CloudAnchorSync", "Leader: hostAnchor called but session is NULL")
             onError("AR session not configured"); return
         }
-        Log.d(TAG, "Hosting cloud anchor...")
+        Log.d("CloudAnchorSync", "Leader: calling hostCloudAnchorAsync...")
         try {
             session.hostCloudAnchorAsync(localAnchor, CLOUD_ANCHOR_TTL_DAYS) { cloudAnchorId, state ->
+                Log.d("CloudAnchorSync", "Leader: hostCloudAnchorAsync callback — state=$state, id=$cloudAnchorId")
                 if (state == Anchor.CloudAnchorState.SUCCESS) {
-                    Log.d(TAG, "Hosted successfully: $cloudAnchorId")
+                    Log.d("CloudAnchorSync", "Leader: hosting SUCCESS, id=$cloudAnchorId")
                     onAnchorHosted(cloudAnchorId, localAnchor)
                 } else {
-                    Log.e(TAG, "Hosting failed: $state")
+                    Log.e("CloudAnchorSync", "Leader: hosting FAILED with state=$state")
                     onError("Hosting failed: $state")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception hosting: ${e.message}")
+            Log.e("CloudAnchorSync", "Leader: exception during hostCloudAnchorAsync — ${e.message}", e)
             onError("Hosting exception: ${e.message}")
         }
     }
 
     fun resolveAnchor(cloudAnchorId: String) {
         val session = this.session ?: run {
-            Log.e(TAG, "resolveAnchor called before configureSession")
+            Log.e("CloudAnchorSync", "Follower: resolveAnchor called but session is NULL")
             onError("AR session not configured"); return
         }
-        Log.d(TAG, "Resolving cloud anchor: $cloudAnchorId")
+        Log.d("CloudAnchorSync", "Follower: session exists, calling resolveCloudAnchorAsync for id=$cloudAnchorId")
+
+        var callbackFired = false
+
         try {
             session.resolveCloudAnchorAsync(cloudAnchorId) { anchor, state ->
+                callbackFired = true
+                Log.d("CloudAnchorSync", "Follower: resolveCloudAnchorAsync callback — state=$state")
                 if (state == Anchor.CloudAnchorState.SUCCESS) {
-                    Log.d(TAG, "Resolved successfully")
+                    Log.d("CloudAnchorSync", "Follower: resolution SUCCESS")
                     onAnchorResolved(anchor)
                 } else {
-                    Log.e(TAG, "Resolution failed: $state")
+                    Log.e("CloudAnchorSync", "Follower: resolution FAILED with state=$state")
+                    onResolveFailed()
                     onError("Resolution failed: $state")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception resolving: ${e.message}")
+            Log.e("CloudAnchorSync", "Follower: exception during resolveCloudAnchorAsync — ${e.message}", e)
+            onResolveFailed()
             onError("Resolution exception: ${e.message}")
         }
     }

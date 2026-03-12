@@ -40,8 +40,10 @@ fun MeshNavHost(
     // the ViewModel emits on navigateToMesh and we navigate here.
     LaunchedEffect(Unit) {
         viewModel.navigateToMesh.collect {
-            navController.navigate(Routes.MESH) {
-                popUpTo(Routes.CONNECTION) { inclusive = true }
+            if (navController.currentDestination?.route != Routes.MESH) {
+                navController.navigate(Routes.MESH) {
+                    popUpTo(Routes.CONNECTION) { inclusive = true }
+                }
             }
         }
     }

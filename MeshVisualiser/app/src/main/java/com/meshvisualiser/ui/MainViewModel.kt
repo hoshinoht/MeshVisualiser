@@ -303,6 +303,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val cloudAnchorId: StateFlow<String?> = _cloudAnchorId.asStateFlow()
 
     private var isInitialized = false
+    private var meshStarted = false
 
     /** Initialize all managers with default service ID. Call after permissions are granted. */
     fun initialize() {
@@ -806,6 +807,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun leaveGroup() {
+        meshStarted = false
         hardwareCheckJob?.cancel()
         discoveryTimeoutJob?.cancel()
         _discoveryTimeoutReached.value = false
@@ -871,14 +873,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onCloudAnchorHosted(cloudAnchorId: String) {
         _cloudAnchorId.value = cloudAnchorId
         _cloudAnchorStatus.value = "Shared anchor ready"
+        Log.d("CloudAnchorSync", "Leader: onCloudAnchorHosted — broadcasting id=$cloudAnchorId")
         broadcastCloudAnchorId(cloudAnchorId)
 
-        // Store anchor + leader on server for late joiners
         viewModelScope.launch {
             aiClient.putAnchor(roomCode, cloudAnchorId)
-                .onFailure { Log.e(TAG, "Failed to store anchor on server: ${it.message}") }
+                .onSuccess { Log.d("CloudAnchorSync", "Leader: anchor stored on server OK") }
+                .onFailure { Log.e("CloudAnchorSync", "Leader: failed to store anchor on server — ${it.message}") }
             aiClient.putLeader(roomCode, localId.toString())
-                .onFailure { Log.e(TAG, "Failed to store leader on server: ${it.message}") }
+                .onFailure { Log.e("CloudAnchorSync", "Leader: failed to store leader on server — ${it.message}") }
         }
     }
 
@@ -927,12 +930,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun beginMesh() {
+        if (meshStarted) {
+            Log.w("CloudAnchorSync", "beginMesh called again — ignoring duplicate")
+            return
+        }
+        meshStarted = true
         _connectionState.value = ConnectionFlowState.STARTING
         sessionStartTime = System.currentTimeMillis()
         meshManager.startElection()
         _navigateToMesh.tryEmit(Unit)
-
-        // Notify narrator of election start
         narrator.onEvent(ProtocolNarrator.ProtocolEvent.ElectionStarted(_peers.value.size))
     }
 
@@ -955,7 +961,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     MessageType.DATA_TCP, MessageType.DATA_UDP ->
                         onDataReceived(endpointId, message)
                     MessageType.START_MESH ->
-                        beginMesh()
+                        if (_connectionState.value != ConnectionFlowState.STARTING) {
+                            beginMesh()
+                        }
                     MessageType.CONFIG_SYNC -> {
                         // Apply config from another device — no re-broadcast to avoid loops
                         val parts = message.data.split("|")
@@ -966,12 +974,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     MessageType.COORDINATOR -> {
-                        // If the COORDINATOR message carries a non-empty cloud anchor ID,
-                        // surface it via _cloudAnchorId so ArSceneComposable can resolve it.
                         if (message.data.isNotBlank()) {
+                            Log.d("CloudAnchorSync", "Follower: received COORDINATOR message with cloudAnchorId=${message.data}")
                             _cloudAnchorId.value = message.data
+                        } else {
+                            Log.w("CloudAnchorSync", "Follower: received COORDINATOR message but data is blank")
                         }
-                        // Always forward to MeshManager for leader election tracking
                         meshManager.onMessageReceived(endpointId, message)
                     }
                     else ->
@@ -1013,6 +1021,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { nearbyManager.lastError.collect { _nearbyError.value = it } }
 
         isInitialized = true
+    }
+
+    fun onArScreenLeft() {
+        _cloudAnchorId.value = null
+        _cloudAnchorStatus.value = null
+        meshStarted = false
+        Log.d(TAG, "AR screen left — cloud anchor and mesh state cleared")
     }
 
     // ── AI: Snapshot ──
