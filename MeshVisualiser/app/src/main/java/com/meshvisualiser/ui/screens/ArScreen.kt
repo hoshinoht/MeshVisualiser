@@ -87,11 +87,13 @@ private fun ArHud(
     isLeader: Boolean,
     cloudAnchorId: String?,
     anchorResolved: Boolean,
+    resolveTimedOut: Boolean,
     onSelectPeer: (Long?) -> Unit,
     onSendTcp: () -> Unit,
     onSendUdp: () -> Unit,
     onBack: () -> Unit,
-    onReposition: () -> Unit
+    onReposition: () -> Unit,
+    onSkipSync: () -> Unit
 ) {
     // Derive follower state
     val followerState = when {
@@ -167,12 +169,29 @@ private fun ArHud(
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
                                 LinearProgressIndicator(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp),
+                                    modifier = Modifier.fillMaxWidth().height(4.dp),
                                     color = MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                                 )
+
+                                // Show skip option after timeout
+                                if (resolveTimedOut) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        "Taking too long?",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    TextButton(onClick = onSkipSync) {
+                                        Text("Continue without sync", color = MaterialTheme.colorScheme.error)
+                                    }
+                                    Text(
+                                        "Peer positions may not align correctly.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
                             }
                             else -> {}
                         }
@@ -394,13 +413,6 @@ fun ArScreen(
     onBack: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    DisposableEffect(Unit) {
-        val window = (context as? android.app.Activity)?.window
-        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        onDispose {
-            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-    }
 
     val peers by viewModel.peers.collectAsState()
     val selectedPeerId by viewModel.selectedPeerId.collectAsState()
@@ -425,14 +437,18 @@ fun ArScreen(
     val allMaterials = remember { mutableListOf<MaterialInstance>() }
     val packetNodes = remember { mutableListOf<AnchorNode>() }
     val resolveAttempt = remember { mutableStateOf(0) }
-    val anchorResolved = isLeader && cloudAnchorStatus != null ||
-            cloudAnchorStatus == "Shared anchor resolved"
+    val anchorResolved by viewModel.anchorResolved.collectAsState()
+    val resolveStartTime = remember { mutableStateOf(0L) }
+    val resolveTimedOut = remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
+        val window = (context as? android.app.Activity)?.window
+        window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             Log.e("CloudAnchorSync", "DisposableEffect onDispose fired — isDisposed set to true")
             isDisposed.value = true
-            viewModel.onArScreenLeft()  // ADD
+            viewModel.onArScreenLeft()
         }
     }
 
@@ -440,7 +456,14 @@ fun ArScreen(
         Log.d("CloudAnchorSync", "isLeader changed to: $isLeader")
     }
     LaunchedEffect(cloudAnchorId) {
-        Log.d("CloudAnchorSync", "cloudAnchorId changed to: $cloudAnchorId")
+        if (cloudAnchorId != null && !isLeader) {
+            resolveStartTime.value = System.currentTimeMillis()
+            delay(60_000) // 60 second timeout
+            if (!anchorResolved) {
+                resolveTimedOut.value = true
+                Log.w("CloudAnchorSync", "Follower: resolve timed out after 60s")
+            }
+        }
     }
     LaunchedEffect(peers.size) {
         Log.d("CloudAnchorSync", "peers count changed to: ${peers.size}")
@@ -656,12 +679,18 @@ fun ArScreen(
             cloudAnchorStatus = cloudAnchorStatus,
             isLeader = isLeader,
             cloudAnchorId = cloudAnchorId,
-            anchorResolved = anchorResolved,
+            anchorResolved = anchorResolved || isLeader && cloudAnchorStatus == "Shared anchor ready",
             onSelectPeer = { viewModel.selectPeer(it) },
             onSendTcp = { viewModel.sendTcpData() },
             onSendUdp = { viewModel.sendUdpData() },
             onBack = onBack,
-            onReposition = { sessionManagerRef[0]?.repositionLocalNode() }
+            onReposition = { sessionManagerRef[0]?.repositionLocalNode() },
+            resolveTimedOut = resolveTimedOut.value,
+            onSkipSync = {
+                resolveTimedOut.value = false
+                // Force anchorResolved so UI unblocks
+                viewModel.onCloudAnchorResolved()
+            }
         )
     }
 }

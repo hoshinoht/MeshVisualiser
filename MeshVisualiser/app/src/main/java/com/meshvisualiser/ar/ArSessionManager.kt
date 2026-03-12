@@ -27,6 +27,7 @@ class ArSessionManager(
     private var resolveRequested: Boolean = false
     private var anchorPlacedTime: Long = 0L
     private var localPositionLocked = false
+    private var lastResolvedAnchorId: String? = null
 
     companion object {
         /** Force hosting after this many ms even if quality is INSUFFICIENT. */
@@ -182,22 +183,26 @@ class ArSessionManager(
 
     fun onCloudAnchorHosted() {
         nodeManager.clearPeers()
+        poseManager.resetBroadcast()
         cloudAnchorReady = true
         Log.d(TAG, "Cloud anchor hosted — pose broadcast enabled")
     }
 
     fun resolveCloudAnchor(cloudAnchorId: String) {
-        if (resolveRequested) {
-            Log.w("CloudAnchorSync", "Follower: resolveCloudAnchor called again but already requested, ignoring")
+        // Allow re-resolve if anchor ID changed
+        if (resolveRequested && this.lastResolvedAnchorId == cloudAnchorId) {
+            Log.w("CloudAnchorSync", "Follower: resolve already requested for this ID, ignoring")
             return
         }
         resolveRequested = true
+        lastResolvedAnchorId = cloudAnchorId
         Log.d("CloudAnchorSync", "Follower: resolveCloudAnchor called with id=$cloudAnchorId")
         cloudAnchorManager.resolveAnchor(cloudAnchorId)
     }
 
     fun onCloudAnchorResolveFailed() {
         resolveRequested = false
+        lastResolvedAnchorId = null
         Log.d(TAG, "Resolve failed — resetting flag so retry is possible")
         onResolveRetryNeeded()
     }
@@ -211,7 +216,6 @@ class ArSessionManager(
     fun onCloudAnchorResolved(resolvedAnchor: Anchor) {
         Log.d(TAG, "Cloud anchor resolved — replacing local anchor")
         runCatching { worldAnchor?.detach() }
-
         worldAnchor = resolvedAnchor
         poseManager.setSharedAnchor(resolvedAnchor)
 
@@ -221,9 +225,8 @@ class ArSessionManager(
         val wz = pose.tz()
         localWorldPos = Triple(wx, wy, wz)
         nodeManager.placeLocalNode(wx, wy, wz, localDeviceName)
-
         nodeManager.clearPeers()
-
+        poseManager.resetBroadcast()
         cloudAnchorReady = true
         Log.d(TAG, "Shared anchor set — pose broadcast enabled")
     }
@@ -235,6 +238,7 @@ class ArSessionManager(
         cloudAnchorReady = false
         hostingRequested = false
         resolveRequested = false
+        lastResolvedAnchorId = null
         localWorldPos = null
         Log.d(TAG, "Session state reset")
         localPositionLocked = false

@@ -301,6 +301,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // AR: Cloud Anchor ID received from leader via COORDINATOR message
     private val _cloudAnchorId = MutableStateFlow<String?>(null)
     val cloudAnchorId: StateFlow<String?> = _cloudAnchorId.asStateFlow()
+    private var peerRebroadcastJob: Job? = null
+    private val _anchorResolved = MutableStateFlow(false)
+    val anchorResolved: StateFlow<Boolean> = _anchorResolved.asStateFlow()
 
     private var isInitialized = false
     private var meshStarted = false
@@ -808,9 +811,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun leaveGroup() {
         meshStarted = false
+        _anchorResolved.value = false
         hardwareCheckJob?.cancel()
         discoveryTimeoutJob?.cancel()
         _discoveryTimeoutReached.value = false
+        _cloudAnchorId.value = null
+        _cloudAnchorStatus.value = null
         if (isInitialized) {
             nearbyManager.cleanup()
             meshManager.cleanup()
@@ -888,12 +894,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Called from ArScreen when a follower successfully resolves the cloud anchor. */
     fun onCloudAnchorResolved() {
         _cloudAnchorStatus.value = "Shared anchor resolved"
+        _anchorResolved.value = true
     }
 
     /** Called from ArScreen when cloud anchor hosting or resolution fails. */
     fun onCloudAnchorError(message: String) {
         Log.e(TAG, "Cloud anchor error: $message")
         _cloudAnchorStatus.value = "Anchor failed: $message"
+        _anchorResolved.value = false
     }
 
     /**
@@ -1020,14 +1028,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { nearbyManager.isAdvertising.collect { _nearbyIsAdvertising.value = it } }
         viewModelScope.launch { nearbyManager.lastError.collect { _nearbyError.value = it } }
 
+        // Re-broadcast cloud anchor ID when a peer connects (leader only)
+        peerRebroadcastJob?.cancel()
+        peerRebroadcastJob = viewModelScope.launch {
+            _peers.collect { peers ->
+                val anchorId = _cloudAnchorId.value ?: return@collect
+                if (!_isLeader.value) return@collect
+                if (peers.values.any { it.hasValidPeerId }) {
+                    Log.d(TAG, "Peer connected — re-broadcasting anchor ID: $anchorId")
+                    broadcastCloudAnchorId(anchorId)
+                }
+            }
+        }
+
         isInitialized = true
     }
 
     fun onArScreenLeft() {
-        _cloudAnchorId.value = null
         _cloudAnchorStatus.value = null
+        _anchorResolved.value = false  // Reset so overlay shows on re-entry
         meshStarted = false
-        Log.d(TAG, "AR screen left — cloud anchor and mesh state cleared")
+        Log.d(TAG, "AR screen left — status cleared, anchor ID preserved")
     }
 
     // ── AI: Snapshot ──

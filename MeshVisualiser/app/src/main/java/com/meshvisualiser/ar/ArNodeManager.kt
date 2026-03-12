@@ -12,22 +12,19 @@ import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.math.Position
 import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Size
-import io.github.sceneview.node.CylinderNode
 import io.github.sceneview.node.ImageNode
 import io.github.sceneview.node.SphereNode
-import kotlin.math.atan2
-import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.atan2
 import androidx.core.graphics.createBitmap
 
 /**
  * Owns all AR node lifecycle for the mesh visualiser.
- * All nodes are placed in world space directly on the sceneView.
  *
- * Line rendering uses two back-to-back CylinderNodes (one normal, one flipped 180°)
- * so that both inward and outward faces are always visible regardless of camera angle.
+ * Lines are rendered as a chain of small spheres placed at fixed world-space positions —
+ * exactly the same approach as packet animation. Zero rotation math, visible from all angles.
  */
 class ArNodeManager(private val sceneView: ARSceneView) {
 
@@ -35,28 +32,24 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         private const val TAG = "ArNodeManager"
 
         private const val LOCAL_SPHERE_RADIUS = 0.04f
-        private const val PEER_SPHERE_RADIUS = 0.04f
-        private const val LINE_RADIUS = 0.008f
-        private const val LINE_SIDE_COUNT = 16
-        private const val LABEL_Y_OFFSET = 0.12f
+        private const val PEER_SPHERE_RADIUS  = 0.04f
+        private const val LABEL_Y_OFFSET      = 0.12f
 
-        private const val LABEL_BMP_W = 256
-        private const val LABEL_BMP_H = 64
+        // Line: one dot every 3cm, each dot is 5mm radius
+        private const val LINE_DOT_RADIUS  = 0.005f
+        private const val LINE_DOT_SPACING = 0.3f
+
+        private const val LABEL_BMP_W        = 256
+        private const val LABEL_BMP_H        = 64
         private const val LABEL_TEXT_SIZE_PX = 36f
-
-        private const val LABEL_WORLD_W = 0.30f
-        private const val LABEL_WORLD_H = LABEL_WORLD_W * LABEL_BMP_H.toFloat() / LABEL_BMP_W.toFloat()
+        private const val LABEL_WORLD_W      = 0.30f
+        private const val LABEL_WORLD_H      = LABEL_WORLD_W * LABEL_BMP_H.toFloat() / LABEL_BMP_W
     }
 
-    /**
-     * cylOuter: normals face outward (default)
-     * cylInner: same position/rotation but normals face inward (rotated 180° around its local Z axis)
-     * Together they cover all viewing angles.
-     */
     private data class PeerNodes(
         val sphere: SphereNode,
-        val cylOuter: CylinderNode,
-        val cylInner: CylinderNode,
+        val lineDots: List<SphereNode>,
+        val lineMat: com.google.android.filament.MaterialInstance,
         val label: ImageNode?,
         val worldX: Float,
         val worldY: Float,
@@ -71,21 +64,18 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         val worldZ: Float
     )
 
-    private val peerNodes = mutableMapOf<Long, PeerNodes>()
+    private val peerNodes  = mutableMapOf<Long, PeerNodes>()
     private val ghostNodes = mutableMapOf<Long, GhostNodes>()
     private var localSphere: SphereNode? = null
-    private var localLabel: ImageNode? = null
+    private var localLabel: ImageNode?   = null
     private var localWorldPos: Triple<Float, Float, Float>? = null
-
-    private var lastLineUpdateMs = 0L
-    private val LINE_UPDATE_INTERVAL_MS = 5_000L
 
     // Local node
 
     fun placeLocalNode(wx: Float, wy: Float, wz: Float, displayName: String) {
         if (localSphere != null) {
             localSphere?.position = Position(wx, wy, wz)
-            localLabel?.position = Position(wx, wy + LABEL_Y_OFFSET, wz)
+            localLabel?.position  = Position(wx, wy + LABEL_Y_OFFSET, wz)
             localWorldPos = Triple(wx, wy, wz)
             Log.d(TAG, "Local node repositioned to ($wx, $wy, $wz)")
             return
@@ -103,7 +93,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
                 it.position = Position(wx, wy, wz)
                 sceneView.addChildNode(it)
             }
-            localLabel = buildLabel(-1L, "$displayName (You)", wx, wy, wz)
+            localLabel    = buildLabel(-1L, "$displayName (You)", wx, wy, wz)
             localWorldPos = Triple(wx, wy, wz)
             Log.d(TAG, "Local node placed at ($wx, $wy, $wz) name=$displayName")
         } catch (e: Exception) {
@@ -113,7 +103,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     fun updateLocalPosition(wx: Float, wy: Float, wz: Float) {
         localSphere?.position = Position(wx, wy, wz)
-        localLabel?.position = Position(wx, wy + LABEL_Y_OFFSET, wz)
+        localLabel?.position  = Position(wx, wy + LABEL_Y_OFFSET, wz)
         localWorldPos = Triple(wx, wy, wz)
     }
 
@@ -147,39 +137,59 @@ class ArNodeManager(private val sceneView: ARSceneView) {
                 sceneView.addChildNode(it)
             }
 
-            val from = floatArrayOf(wx, wy, wz)
-            val to = floatArrayOf(lp.first, lp.second, lp.third)
-
-            val cylOuter = makeCylinder(lineMat).also { cyl ->
-                positionCylinder(cyl, from, to, flipped = false)
-                sceneView.addChildNode(cyl)
-            }
-
-            val cylInner = makeCylinder(lineMat).also { cyl ->
-                positionCylinder(cyl, from, to, flipped = true)
-                sceneView.addChildNode(cyl)
-            }
+            val lineDots = buildLineDots(
+                fromX = wx, fromY = wy, fromZ = wz,
+                toX = lp.first, toY = lp.second, toZ = lp.third,
+                mat = lineMat
+            )
 
             val labelNode = buildLabel(peerId, label, wx, wy, wz)
-            peerNodes[peerId] = PeerNodes(sphere, cylOuter, cylInner, labelNode, wx, wy, wz)
-            Log.d(TAG, "Added peer $peerId at ($wx, $wy, $wz)")
+            peerNodes[peerId] = PeerNodes(sphere, lineDots, lineMat, labelNode, wx, wy, wz)
+            Log.d(TAG, "Added peer $peerId at ($wx, $wy, $wz) with ${lineDots.size} line dots")
         } catch (e: Exception) {
             Log.e(TAG, "addPeer error for $peerId: ${e.message}")
         }
     }
 
-    private fun makeCylinder(mat: com.google.android.filament.MaterialInstance): CylinderNode =
-        CylinderNode(
-            engine = sceneView.engine,
-            radius = LINE_RADIUS,
-            height = 1f,
-            sideCount = LINE_SIDE_COUNT,
-            materialInstance = mat
-        ).also {
-            it.setCulling(false)
-            it.isShadowCaster = false
-            it.isShadowReceiver = false
+    /**
+     * Build a chain of small spheres from (fromX,fromY,fromZ) to (toX,toY,toZ).
+     * Identical positioning logic to animatePacket — lerp t from 0..1.
+     */
+    private fun buildLineDots(
+        fromX: Float, fromY: Float, fromZ: Float,
+        toX: Float,   toY: Float,   toZ: Float,
+        mat: com.google.android.filament.MaterialInstance
+    ): List<SphereNode> {
+        val dx = toX - fromX
+        val dy = toY - fromY
+        val dz = toZ - fromZ
+        val length = sqrt(dx * dx + dy * dy + dz * dz)
+        if (length < 0.001f) return emptyList()
+
+        val count = (length / LINE_DOT_SPACING).toInt().coerceAtLeast(1)
+        return (0..count).map { i ->
+            val t = i.toFloat() / count
+            SphereNode(
+                engine = sceneView.engine,
+                radius = LINE_DOT_RADIUS,
+                materialInstance = mat
+            ).also {
+                it.position = Position(
+                    fromX + dx * t,
+                    fromY + dy * t,
+                    fromZ + dz * t
+                )
+                sceneView.addChildNode(it)
+            }
         }
+    }
+
+    private fun destroyLineDots(dots: List<SphereNode>) {
+        dots.forEach { dot ->
+            runCatching { sceneView.removeChildNode(dot) }
+            runCatching { dot.destroy() }
+        }
+    }
 
     fun removePeer(peerId: Long) {
         peerNodes.remove(peerId)?.destroySafely()
@@ -190,16 +200,15 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         nodes.sphere.position = Position(wx, wy, wz)
         nodes.label?.position = Position(wx, wy + LABEL_Y_OFFSET, wz)
 
-        val lp = localWorldPos ?: run {
-            peerNodes[peerId] = nodes.copy(worldX = wx, worldY = wy, worldZ = wz)
-            return
-        }
-        val from = floatArrayOf(wx, wy, wz)
-        val to = floatArrayOf(lp.first, lp.second, lp.third)
-        runCatching { positionCylinder(nodes.cylOuter, from, to, flipped = false) }
-        runCatching { positionCylinder(nodes.cylInner, from, to, flipped = true) }
+        // Destroy old line dots
+        destroyLineDots(nodes.lineDots)
 
-        peerNodes[peerId] = nodes.copy(worldX = wx, worldY = wy, worldZ = wz)
+        val lp = localWorldPos
+        val newDots = if (lp != null) {
+            buildLineDots(wx, wy, wz, lp.first, lp.second, lp.third, nodes.lineMat)
+        } else emptyList()
+
+        peerNodes[peerId] = nodes.copy(worldX = wx, worldY = wy, worldZ = wz, lineDots = newDots)
         Log.d(TAG, "Updated peer $peerId to ($wx, $wy, $wz)")
     }
 
@@ -212,11 +221,11 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         val lp = localWorldPos ?: return
         try {
             val count = ghostNodes.size
-            val angle = count * (2.0 * Math.PI / 6.0)
+            val angle  = count * (2.0 * Math.PI / 6.0)
             val radius = 0.5f
-            val wx = lp.first + (radius * cos(angle)).toFloat()
+            val wx = lp.first  + (radius * cos(angle)).toFloat()
             val wy = lp.second
-            val wz = lp.third + (radius * sin(angle)).toFloat()
+            val wz = lp.third  + (radius * sin(angle)).toFloat()
 
             val mat = sceneView.materialLoader.createColorInstance(
                 color = Color(0.2f, 0.8f, 1.0f, 0.3f),
@@ -247,99 +256,9 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     fun updateLabelOrientations() {
         val camPos = sceneView.cameraNode.worldPosition
         localLabel?.billboardYaw(camPos)
-        peerNodes.values.forEach { it.label?.billboardYaw(camPos) }
+        peerNodes.values.forEach  { it.label?.billboardYaw(camPos) }
         ghostNodes.values.forEach { it.label?.billboardYaw(camPos) }
-
-        val now = System.currentTimeMillis()
-        if (now - lastLineUpdateMs >= LINE_UPDATE_INTERVAL_MS) {
-            lastLineUpdateMs = now
-            refreshLines()
-        }
-    }
-
-    private fun refreshLines() {
-        val lp = localWorldPos ?: return
-        peerNodes.values.forEach { nodes ->
-            val from = floatArrayOf(nodes.worldX, nodes.worldY, nodes.worldZ)
-            val to = floatArrayOf(lp.first, lp.second, lp.third)
-            runCatching { positionCylinder(nodes.cylOuter, from, to, flipped = false) }
-            runCatching { positionCylinder(nodes.cylInner, from, to, flipped = true) }
-        }
-    }
-
-    // Cylinder positioning
-
-    /**
-     * Positions a CylinderNode between [from] and [to].
-     * [flipped] = true rotates 180° around local Z so normals face inward,
-     * covering the faces that the outer cylinder back-culls.
-     */
-    private fun positionCylinder(
-        cylinder: CylinderNode,
-        from: FloatArray,
-        to: FloatArray,
-        flipped: Boolean
-    ) {
-        val dx = to[0] - from[0]; val dy = to[1] - from[1]; val dz = to[2] - from[2]
-        val length = sqrt(dx * dx + dy * dy + dz * dz)
-        if (length < 0.001f) return
-
-        cylinder.position = Position(
-            (from[0] + to[0]) / 2f,
-            (from[1] + to[1]) / 2f,
-            (from[2] + to[2]) / 2f
-        )
-        cylinder.updateGeometry(height = length)
-        cylinder.setCulling(false)
-
-        val ux = dx / length
-        val uy = dy / length
-        val uz = dz / length
-
-        // Quaternion: rotate Y-up (0,1,0) → (ux,uy,uz)
-        val dot = uy
-        var qx: Float; var qy: Float; var qz: Float; var qw: Float
-
-        when {
-            dot < -0.9999f -> { qx = 1f; qy = 0f; qz = 0f; qw = 0f }
-            dot > 0.9999f  -> { qx = 0f; qy = 0f; qz = 0f; qw = 1f }
-            else -> {
-                // cross(Y, D) = (uz, 0, -ux)
-                val axisX = uz
-                val axisZ = -ux
-                val axisLen = sqrt(axisX * axisX + axisZ * axisZ)
-                val angle = Math.acos(dot.toDouble())
-                val s = Math.sin(angle / 2).toFloat()
-                qx = (axisX / axisLen) * s
-                qy = 0f
-                qz = (axisZ / axisLen) * s
-                qw = Math.cos(angle / 2).toFloat()
-            }
-        }
-
-        // Compose with 180° flip around local Z: qFlip = (0, 0, sin90, cos90) = (0,0,1,0)
-        // qResult = qFlip * q  →  (0,0,1,0) * (qx,qy,qz,qw) = (qy, -qx, qw, -qz)
-        if (flipped) {
-            val fx =  qy
-            val fy = -qx
-            val fz =  qw
-            val fw = -qz
-            qx = fx; qy = fy; qz = fz; qw = fw
-        }
-
-        // Convert quaternion → Euler for SceneView Rotation(pitch, yaw, roll)
-        val sinPitch = 2f * (qw * qx - qy * qz)
-        val pitchDeg = Math.toDegrees(Math.asin(sinPitch.toDouble())).toFloat()
-        val yawDeg = Math.toDegrees(atan2(
-            (2f * (qw * qy + qx * qz)).toDouble(),
-            (1f - 2f * (qx * qx + qy * qy)).toDouble()
-        )).toFloat()
-        val rollDeg = Math.toDegrees(atan2(
-            (2f * (qw * qz + qx * qy)).toDouble(),
-            (1f - 2f * (qy * qy + qz * qz)).toDouble()
-        )).toFloat()
-
-        cylinder.rotation = Rotation(pitchDeg, yawDeg, rollDeg)
+        // No line refresh needed — dots are at fixed world positions
     }
 
     // Clear
@@ -356,8 +275,8 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         localLabel?.destroyImageNodeSafely()
         runCatching { localSphere?.let { sceneView.removeChildNode(it) } }
         runCatching { localSphere?.destroy() }
-        localLabel = null
-        localSphere = null
+        localLabel    = null
+        localSphere   = null
         localWorldPos = null
     }
 
@@ -399,7 +318,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     }
 
     private fun makeLabelBitmap(text: String): Bitmap {
-        val bmp = createBitmap(LABEL_BMP_W, LABEL_BMP_H)
+        val bmp    = createBitmap(LABEL_BMP_W, LABEL_BMP_H)
         val canvas = Canvas(bmp)
         canvas.scale(-1f, 1f, LABEL_BMP_W / 2f, LABEL_BMP_H / 2f)
         canvas.drawRoundRect(
@@ -408,29 +327,32 @@ class ArNodeManager(private val sceneView: ARSceneView) {
                 color = AndroidColor.argb(180, 0, 0, 0); style = Paint.Style.FILL
             }
         )
-        val cx = LABEL_BMP_W / 2f
+        val cx          = LABEL_BMP_W / 2f
         val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = AndroidColor.argb(160, 0, 0, 0); textSize = LABEL_TEXT_SIZE_PX
-            typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
+            color     = AndroidColor.argb(160, 0, 0, 0)
+            textSize  = LABEL_TEXT_SIZE_PX
+            typeface  = Typeface.DEFAULT_BOLD
+            textAlign = Paint.Align.CENTER
         }
         val cy = LABEL_BMP_H / 2f - (shadowPaint.descent() + shadowPaint.ascent()) / 2f
         canvas.drawText(text, cx + 1.5f, cy + 1.5f, shadowPaint)
         canvas.drawText(text, cx, cy, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = AndroidColor.WHITE; textSize = LABEL_TEXT_SIZE_PX
-            typeface = Typeface.DEFAULT_BOLD; textAlign = Paint.Align.CENTER
+            color     = AndroidColor.WHITE
+            textSize  = LABEL_TEXT_SIZE_PX
+            typeface  = Typeface.DEFAULT_BOLD
+            textAlign = Paint.Align.CENTER
         })
         return bmp
     }
 
-    // Destroy
+    //Destroy
 
     private fun PeerNodes.destroySafely() {
         runCatching { sceneView.removeChildNode(sphere) }
-        runCatching { sceneView.removeChildNode(cylOuter) }
-        runCatching { sceneView.removeChildNode(cylInner) }
         runCatching { sphere.destroy() }
-        runCatching { cylOuter.destroy() }
-        runCatching { cylInner.destroy() }
+        destroyLineDots(lineDots)
+        // Destroy the shared line material instance
+        runCatching { sceneView.engine.destroyMaterialInstance(lineMat) }
         label?.destroyImageNodeSafely()
     }
 

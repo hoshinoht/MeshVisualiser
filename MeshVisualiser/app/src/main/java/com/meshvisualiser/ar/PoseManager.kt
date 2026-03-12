@@ -22,7 +22,7 @@ class PoseManager(
     private var lastY = Float.NaN
     private var lastZ = Float.NaN
     private var broadcastCount = 0
-    private val MAX_BROADCASTS = 5  // send 5 times to ensure at least one gets through
+    private val MAX_BROADCASTS = 10  // send 10 times to ensure at least one gets through
 
 
 
