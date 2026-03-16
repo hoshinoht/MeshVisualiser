@@ -7,14 +7,14 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.Log
-import androidx.compose.ui.graphics.Color
+import com.google.android.filament.Material
+import com.google.android.filament.MaterialInstance
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.math.Position
 import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Size
 import io.github.sceneview.node.ImageNode
 import io.github.sceneview.node.SphereNode
-import com.google.android.filament.MaterialInstance
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -25,27 +25,59 @@ import androidx.core.graphics.createBitmap
 /**
  * Owns all AR node lifecycle for the mesh visualiser.
  *
- * Lines are rendered as a chain of small spheres placed at fixed world-space positions —
- * exactly the same approach as packet animation. Zero rotation math, visible from all angles.
+ * Markers (local device, peers, ghosts) are rendered as 2D billboard ImageNodes
+ * with pre-rendered circle bitmaps — always face the camera and use only 4 vertices
+ * instead of a full 3D sphere mesh.
+ *
+ * Line dots use a custom unlit material (no per-fragment lighting calculations)
+ * with an object pool to avoid per-frame allocations.
  */
 class ArNodeManager(private val sceneView: ARSceneView) {
 
     companion object {
         private const val TAG = "ArNodeManager"
 
-        private const val LOCAL_SPHERE_RADIUS = 0.04f
-        private const val PEER_SPHERE_RADIUS  = 0.04f
-        private const val LABEL_Y_OFFSET      = 0.12f
+        // 2D marker sizes (world-space metres)
+        private const val LOCAL_MARKER_SIZE  = 0.08f
+        private const val PEER_MARKER_SIZE   = 0.08f
+        private const val LABEL_Y_OFFSET     = 0.10f
 
-        // Line: one dot every 3cm, each dot is 5mm radius
+        // Line dots: unlit 3D spheres, pooled
         private const val LINE_DOT_RADIUS  = 0.005f
         private const val LINE_DOT_SPACING = 0.3f
 
-        private const val LABEL_BMP_W        = 256
-        private const val LABEL_BMP_H        = 64
+        // Label bitmap
+        private const val LABEL_BMP_W       = 256
+        private const val LABEL_BMP_H       = 64
         private const val LABEL_TEXT_SIZE_PX = 36f
-        private const val LABEL_WORLD_W      = 0.30f
-        private const val LABEL_WORLD_H      = LABEL_WORLD_W * LABEL_BMP_H.toFloat() / LABEL_BMP_W
+        private const val LABEL_WORLD_W     = 0.30f
+        private const val LABEL_WORLD_H     = LABEL_WORLD_W * LABEL_BMP_H.toFloat() / LABEL_BMP_W
+
+        // Circle bitmap for markers
+        private const val CIRCLE_BMP_SIZE = 128
+    }
+
+    // Custom unlit material — loaded once from compiled .filamat asset
+    private val unlitMaterial: Material? = try {
+        sceneView.materialLoader.createMaterial("materials/unlit_colored.filamat")
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to load unlit material: ${e.message}")
+        null
+    }
+
+    /** Create an unlit MaterialInstance with the given RGBA color. */
+    private fun createUnlitInstance(r: Float, g: Float, b: Float, a: Float): MaterialInstance {
+        val mat = unlitMaterial
+        if (mat != null) {
+            val instance = sceneView.materialLoader.createInstance(mat)
+            instance.setParameter("baseColor", r, g, b, a)
+            return instance
+        }
+        // Fallback to default lit material if unlit failed to load
+        return sceneView.materialLoader.createColorInstance(
+            color = androidx.compose.ui.graphics.Color(r, g, b, a),
+            metallic = 0f, roughness = 1f, reflectance = 0f
+        )
     }
 
     // Object pool for line-dot SphereNodes — avoids per-frame allocations
@@ -74,10 +106,15 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     private val lineDotPool = SphereNodePool(radius = LINE_DOT_RADIUS)
 
+    // Pre-rendered circle bitmaps (created once, reused for all markers)
+    private val localCircleBmp: Bitmap = makeCircleBitmap(0xFF, 0xCC, 0x33, 0xFF)   // Gold
+    private val peerCircleBmp: Bitmap  = makeCircleBitmap(0x33, 0xCC, 0xFF, 0xE6)   // Cyan
+    private val ghostCircleBmp: Bitmap = makeCircleBitmap(0x33, 0xCC, 0xFF, 0x4D)   // Cyan translucent
+
     private data class PeerNodes(
-        val sphere: SphereNode,
+        val marker: ImageNode,
         val lineDots: List<SphereNode>,
-        val lineMat: com.google.android.filament.MaterialInstance,
+        val lineMat: MaterialInstance,
         val label: ImageNode?,
         val worldX: Float,
         val worldY: Float,
@@ -85,7 +122,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     )
 
     private data class GhostNodes(
-        val sphere: SphereNode,
+        val marker: ImageNode,
         val label: ImageNode?,
         val worldX: Float,
         val worldY: Float,
@@ -96,28 +133,24 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     private val peerNodes  = mutableMapOf<Long, PeerNodes>()
     private val ghostNodes = mutableMapOf<Long, GhostNodes>()
-    private var localSphere: SphereNode? = null
-    private var localLabel: ImageNode?   = null
+    private var localMarker: ImageNode? = null
+    private var localLabel: ImageNode?  = null
     private var localWorldPos: Triple<Float, Float, Float>? = null
 
     // Local node
 
     fun placeLocalNode(wx: Float, wy: Float, wz: Float, displayName: String) {
-        if (localSphere != null) {
-            localSphere?.position = Position(wx, wy, wz)
+        if (localMarker != null) {
+            localMarker?.position = Position(wx, wy, wz)
             localLabel?.position  = Position(wx, wy + LABEL_Y_OFFSET, wz)
             localWorldPos = Triple(wx, wy, wz)
             return
         }
         try {
-            val mat = sceneView.materialLoader.createColorInstance(
-                color = Color(1f, 0.8f, 0.2f, 1f),
-                metallic = 0f, roughness = 0.5f, reflectance = 0.5f
-            )
-            localSphere = SphereNode(
-                engine = sceneView.engine,
-                radius = LOCAL_SPHERE_RADIUS,
-                materialInstance = mat
+            localMarker = ImageNode(
+                materialLoader = sceneView.materialLoader,
+                bitmap = localCircleBmp,
+                size = Size(LOCAL_MARKER_SIZE, LOCAL_MARKER_SIZE)
             ).also {
                 it.position = Position(wx, wy, wz)
                 sceneView.addChildNode(it)
@@ -131,7 +164,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     }
 
     fun updateLocalPosition(wx: Float, wy: Float, wz: Float) {
-        localSphere?.position = Position(wx, wy, wz)
+        localMarker?.position = Position(wx, wy, wz)
         localLabel?.position  = Position(wx, wy + LABEL_Y_OFFSET, wz)
         localWorldPos = Triple(wx, wy, wz)
     }
@@ -148,19 +181,12 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         if (hasPeer(peerId)) { Log.w(TAG, "addPeer: $peerId already placed"); return }
         val lp = localWorldPos ?: run { Log.w(TAG, "addPeer: no local node yet"); return }
         try {
-            val sphereMat = sceneView.materialLoader.createColorInstance(
-                color = Color(0.2f, 0.8f, 1.0f, 0.9f),
-                metallic = 0f, roughness = 0.5f, reflectance = 0.5f
-            )
-            val lineMat = sceneView.materialLoader.createColorInstance(
-                color = Color(0.4f, 0.9f, 0.4f, 0.9f),
-                metallic = 0f, roughness = 0.5f, reflectance = 0.5f
-            )
+            val lineMat = createUnlitInstance(0.4f, 0.9f, 0.4f, 0.9f)
 
-            val sphere = SphereNode(
-                engine = sceneView.engine,
-                radius = PEER_SPHERE_RADIUS,
-                materialInstance = sphereMat
+            val marker = ImageNode(
+                materialLoader = sceneView.materialLoader,
+                bitmap = peerCircleBmp,
+                size = Size(PEER_MARKER_SIZE, PEER_MARKER_SIZE)
             ).also {
                 it.position = Position(wx, wy, wz)
                 sceneView.addChildNode(it)
@@ -173,7 +199,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
             )
 
             val labelNode = buildLabel(peerId, label, wx, wy, wz)
-            peerNodes[peerId] = PeerNodes(sphere, lineDots, lineMat, labelNode, wx, wy, wz)
+            peerNodes[peerId] = PeerNodes(marker, lineDots, lineMat, labelNode, wx, wy, wz)
             Log.d(TAG, "Added peer $peerId at ($wx, $wy, $wz) with ${lineDots.size} line dots")
         } catch (e: Exception) {
             Log.e(TAG, "addPeer error for $peerId: ${e.message}")
@@ -181,13 +207,12 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     }
 
     /**
-     * Build a chain of small spheres from (fromX,fromY,fromZ) to (toX,toY,toZ).
-     * Identical positioning logic to animatePacket — lerp t from 0..1.
+     * Build a chain of small unlit spheres from (fromX,fromY,fromZ) to (toX,toY,toZ).
      */
     private fun buildLineDots(
         fromX: Float, fromY: Float, fromZ: Float,
         toX: Float,   toY: Float,   toZ: Float,
-        mat: com.google.android.filament.MaterialInstance
+        mat: MaterialInstance
     ): List<SphereNode> {
         val dx = toX - fromX
         val dy = toY - fromY
@@ -219,10 +244,9 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     fun updatePeerPosition(peerId: Long, wx: Float, wy: Float, wz: Float) {
         val nodes = peerNodes[peerId] ?: return
-        nodes.sphere.position = Position(wx, wy, wz)
+        nodes.marker.position = Position(wx, wy, wz)
         nodes.label?.position = Position(wx, wy + LABEL_Y_OFFSET, wz)
 
-        // Destroy old line dots
         destroyLineDots(nodes.lineDots)
 
         val lp = localWorldPos
@@ -249,16 +273,14 @@ class ArNodeManager(private val sceneView: ARSceneView) {
             val wy = lp.second
             val wz = lp.third  + (radius * sin(angle)).toFloat()
 
-            val mat = sceneView.materialLoader.createColorInstance(
-                color = Color(0.2f, 0.8f, 1.0f, 0.3f),
-                metallic = 0f, roughness = 0.5f, reflectance = 0.5f
-            )
-            val sphere = SphereNode(
-                engine = sceneView.engine, radius = PEER_SPHERE_RADIUS, materialInstance = mat
+            val marker = ImageNode(
+                materialLoader = sceneView.materialLoader,
+                bitmap = ghostCircleBmp,
+                size = Size(PEER_MARKER_SIZE, PEER_MARKER_SIZE)
             ).also { it.position = Position(wx, wy, wz); sceneView.addChildNode(it) }
 
             val labelNode = buildLabel(peerId, "$name (Syncing...)", wx, wy, wz)
-            ghostNodes[peerId] = GhostNodes(sphere, labelNode, wx, wy, wz)
+            ghostNodes[peerId] = GhostNodes(marker, labelNode, wx, wy, wz)
             Log.d(TAG, "Ghost node placed for $peerId")
         } catch (e: Exception) {
             Log.e(TAG, "placeGhostNode error: ${e.message}")
@@ -267,8 +289,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     fun promoteGhost(peerId: Long) {
         ghostNodes.remove(peerId)?.let { ghost ->
-            runCatching { sceneView.removeChildNode(ghost.sphere) }
-            runCatching { ghost.sphere.destroy() }
+            ghost.marker.destroyImageNodeSafely()
             ghost.label?.destroyImageNodeSafely()
         }
     }
@@ -286,9 +307,10 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         }
         lastLabelYawDeg = yawDeg
 
+        localMarker?.billboardYaw(camPos)
         localLabel?.billboardYaw(camPos)
-        peerNodes.values.forEach  { it.label?.billboardYaw(camPos) }
-        ghostNodes.values.forEach { it.label?.billboardYaw(camPos) }
+        peerNodes.values.forEach  { it.marker.billboardYaw(camPos); it.label?.billboardYaw(camPos) }
+        ghostNodes.values.forEach { it.marker.billboardYaw(camPos); it.label?.billboardYaw(camPos) }
     }
 
     // Clear
@@ -297,16 +319,14 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         peerNodes.keys.toList().forEach { removePeer(it) }
         ghostNodes.keys.toList().forEach { id ->
             ghostNodes.remove(id)?.let { ghost ->
-                runCatching { sceneView.removeChildNode(ghost.sphere) }
-                runCatching { ghost.sphere.destroy() }
+                ghost.marker.destroyImageNodeSafely()
                 ghost.label?.destroyImageNodeSafely()
             }
         }
         localLabel?.destroyImageNodeSafely()
-        runCatching { localSphere?.let { sceneView.removeChildNode(it) } }
-        runCatching { localSphere?.destroy() }
+        localMarker?.destroyImageNodeSafely()
         localLabel    = null
-        localSphere   = null
+        localMarker   = null
         localWorldPos = null
         lineDotPool.clear()
     }
@@ -315,20 +335,40 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         peerNodes.keys.toList().forEach { removePeer(it) }
         ghostNodes.keys.toList().forEach { id ->
             ghostNodes.remove(id)?.let { ghost ->
-                runCatching { sceneView.removeChildNode(ghost.sphere) }
-                runCatching { ghost.sphere.destroy() }
+                ghost.marker.destroyImageNodeSafely()
                 ghost.label?.destroyImageNodeSafely()
             }
         }
     }
 
-    // Label
+    // Billboard rotation for ImageNodes
 
     private fun ImageNode.billboardYaw(camPos: Position) {
         val dx = camPos.x - position.x
         val dz = camPos.z - position.z
         val yawDeg = Math.toDegrees(atan2(dx.toDouble(), dz.toDouble())).toFloat() + 180f
         rotation = Rotation(0f, yawDeg, 0f)
+    }
+
+    // Bitmap builders
+
+    private fun makeCircleBitmap(r: Int, g: Int, b: Int, a: Int): Bitmap {
+        val size = CIRCLE_BMP_SIZE
+        val bmp = createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.argb(a, r, g, b)
+            style = Paint.Style.FILL
+        }
+        val cx = size / 2f
+        canvas.drawCircle(cx, cx, cx - 2f, paint)
+        // Bright rim
+        canvas.drawCircle(cx, cx, cx - 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.argb(a / 2, 255, 255, 255)
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+        })
+        return bmp
     }
 
     private fun buildLabel(peerId: Long, text: String?, wx: Float, wy: Float, wz: Float): ImageNode? {
@@ -376,13 +416,11 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         return bmp
     }
 
-    //Destroy
+    // Destroy helpers
 
     private fun PeerNodes.destroySafely() {
-        runCatching { sceneView.removeChildNode(sphere) }
-        runCatching { sphere.destroy() }
+        marker.destroyImageNodeSafely()
         destroyLineDots(lineDots)
-        // Destroy the shared line material instance
         runCatching { sceneView.engine.destroyMaterialInstance(lineMat) }
         label?.destroyImageNodeSafely()
     }

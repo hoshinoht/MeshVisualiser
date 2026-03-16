@@ -433,6 +433,7 @@ fun ArScreen(
     val nodeManagerRef = remember { arrayOfNulls<ArNodeManager>(1) }
     val sessionManagerRef = remember { arrayOfNulls<ArSessionManager>(1) }
     val cloudAnchorManagerRef = remember { arrayOfNulls<CloudAnchorManager>(1) }
+    val unlitMaterialRef = remember { arrayOfNulls<com.google.android.filament.Material>(1) }
     val animatedEventIds = remember { mutableSetOf<Long>() }
     val allMaterials = remember { mutableListOf<MaterialInstance>() }
     val packetNodes = remember { mutableListOf<AnchorNode>() }
@@ -546,7 +547,8 @@ fun ArScreen(
                         durationMs = 600L,
                         isDisposed = isDisposed,
                         allMaterials = allMaterials,
-                        packetNodes = packetNodes
+                        packetNodes = packetNodes,
+                        unlitMaterial = unlitMaterialRef[0]
                     )
                 }
                 viewModel.consumePacketEvent(event.id)
@@ -616,6 +618,13 @@ fun ArScreen(
                         // Disable all scene lighting — AR objects render as flat color
                         sv.mainLightNode = null
                         sv.indirectLight = null
+
+                        // Load custom unlit material for packet animations
+                        unlitMaterialRef[0] = try {
+                            sv.materialLoader.createMaterial("materials/unlit_colored.filamat")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Unlit material not available: ${e.message}"); null
+                        }
 
                         val nm = ArNodeManager(sv)
                         val localName = displayName.ifBlank { Build.MODEL }
@@ -709,7 +718,8 @@ private suspend fun animatePacket(
     durationMs: Long,
     isDisposed: State<Boolean>,
     allMaterials: MutableList<MaterialInstance>,
-    packetNodes: MutableList<AnchorNode>
+    packetNodes: MutableList<AnchorNode>,
+    unlitMaterial: com.google.android.filament.Material? = null
 ) {
     val session = sv.session ?: return
     if (isDisposed.value) return
@@ -718,9 +728,15 @@ private suspend fun animatePacket(
     val stepMs = durationMs / steps
     val maxT = if (isDrop) 0.5f else 1.0f
 
-    val mat = sv.materialLoader.createColorInstance(
-        color = color, metallic = 0f, roughness = 1f, reflectance = 0f
-    )
+    val mat = if (unlitMaterial != null) {
+        sv.materialLoader.createInstance(unlitMaterial).also {
+            it.setParameter("baseColor", color.red, color.green, color.blue, color.alpha)
+        }
+    } else {
+        sv.materialLoader.createColorInstance(
+            color = color, metallic = 0f, roughness = 1f, reflectance = 0f
+        )
+    }
     allMaterials.add(mat)
 
     val sphere = SphereNode(sv.engine, radius = 0.025f, materialInstance = mat)
@@ -747,9 +763,15 @@ private suspend fun animatePacket(
             delay(stepMs)
         }
         if (isDrop && !isDisposed.value) {
-            val dropMat = sv.materialLoader.createColorInstance(
-                color = COLOR_DROP, metallic = 0f, roughness = 1f, reflectance = 0f
-            )
+            val dropMat = if (unlitMaterial != null) {
+                sv.materialLoader.createInstance(unlitMaterial).also {
+                    it.setParameter("baseColor", COLOR_DROP.red, COLOR_DROP.green, COLOR_DROP.blue, COLOR_DROP.alpha)
+                }
+            } else {
+                sv.materialLoader.createColorInstance(
+                    color = COLOR_DROP, metallic = 0f, roughness = 1f, reflectance = 0f
+                )
+            }
             allMaterials.add(dropMat)
             sphere.materialInstance = dropMat
             delay(300L)
