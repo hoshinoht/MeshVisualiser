@@ -37,6 +37,9 @@ class ArSessionManager(
     }
 
     private var frameCount = 0
+    private val lastPeerWorldPos = mutableMapOf<Long, Triple<Float, Float, Float>>()
+    private val activeIdsScratch = HashSet<Long>(8)
+    private var loggedSkipOnce = false
 
     /** World-space position of the local device node (set after anchor placement). */
     var localWorldPos: Triple<Float, Float, Float>? = null
@@ -141,43 +144,58 @@ class ArSessionManager(
             val ay = anchorPose.ty()
             val az = anchorPose.tz()
 
-            // Place peer nodes — real or ghost
-            peers.values.filter { it.hasValidPeerId }.forEach { peer ->
+            activeIdsScratch.clear()
+
+            for (peer in peers.values) {
+                if (!peer.hasValidPeerId) continue
+                activeIdsScratch.add(peer.peerId)
+
                 val hasPose = peer.relativeX != 0f || peer.relativeY != 0f || peer.relativeZ != 0f
                 if (!hasPose) {
                     if (!nodeManager.hasGhost(peer.peerId) && !nodeManager.hasPeer(peer.peerId)) {
                         val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
                         nodeManager.placeGhostNode(peer.peerId, label)
                     }
-                    return@forEach
+                    continue
                 }
 
                 val wx = ax + peer.relativeX
                 val wy = ay + peer.relativeY
                 val wz = az + peer.relativeZ
-                val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
 
                 if (nodeManager.hasPeer(peer.peerId)) {
-                    // Already placed — update position in case they repositioned
+                    val last = lastPeerWorldPos[peer.peerId]
+                    if (last != null) {
+                        val dx = wx - last.first
+                        val dy = wy - last.second
+                        val dz = wz - last.third
+                        if (dx * dx + dy * dy + dz * dz < 0.000001f) continue
+                    }
                     nodeManager.updatePeerPosition(peer.peerId, wx, wy, wz)
-                    return@forEach
+                    lastPeerWorldPos[peer.peerId] = Triple(wx, wy, wz)
+                    continue
                 }
 
+                val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
                 nodeManager.promoteGhost(peer.peerId)
                 nodeManager.addPeer(peerId = peer.peerId, wx = wx, wy = wy, wz = wz, label = label)
+                lastPeerWorldPos[peer.peerId] = Triple(wx, wy, wz)
                 Log.d(TAG, "Placed peer ${peer.peerId} at world ($wx, $wy, $wz)")
             }
 
             // Remove disconnected peers
-            val activeIds = peers.values.filter { it.hasValidPeerId }.map { it.peerId }.toSet()
-            nodeManager.peerIds()
-                .filter { it !in activeIds }
-                .forEach {
-                    nodeManager.removePeer(it)
-                    Log.d(TAG, "Removed disconnected peer $it")
+            for (id in nodeManager.peerIds().toList()) {
+                if (id !in activeIdsScratch) {
+                    nodeManager.removePeer(id)
+                    lastPeerWorldPos.remove(id)
+                    Log.d(TAG, "Removed disconnected peer $id")
                 }
+            }
         } else {
-            Log.d(TAG, "Skipping peer placement — cloud anchor not ready yet")
+            if (!loggedSkipOnce) {
+                Log.d(TAG, "Skipping peer placement — cloud anchor not ready yet")
+                loggedSkipOnce = true
+            }
         }
     }
 
@@ -240,6 +258,7 @@ class ArSessionManager(
         resolveRequested = false
         lastResolvedAnchorId = null
         localWorldPos = null
+        lastPeerWorldPos.clear()
         Log.d(TAG, "Session state reset")
         localPositionLocked = false
     }

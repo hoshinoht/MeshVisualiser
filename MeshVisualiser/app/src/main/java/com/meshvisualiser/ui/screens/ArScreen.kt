@@ -593,7 +593,7 @@ fun ArScreen(
                         context = ctx,
                         sessionConfiguration = { _, config ->
                             config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
-                            config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
+                            config.lightEstimationMode = Config.LightEstimationMode.DISABLED
                             config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
                             config.cloudAnchorMode = Config.CloudAnchorMode.ENABLED
                         },
@@ -612,6 +612,10 @@ fun ArScreen(
                         onSessionFailed = { e -> Log.e(TAG, "Session failed: ${e.message}") }
                     ).also { sv ->
                         sceneViewRef[0] = sv
+
+                        // Disable all scene lighting — AR objects render as flat color
+                        sv.mainLightNode = null
+                        sv.indirectLight = null
 
                         val nm = ArNodeManager(sv)
                         val localName = displayName.ifBlank { Build.MODEL }

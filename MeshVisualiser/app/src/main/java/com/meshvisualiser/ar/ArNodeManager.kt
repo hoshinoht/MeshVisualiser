@@ -14,6 +14,8 @@ import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Size
 import io.github.sceneview.node.ImageNode
 import io.github.sceneview.node.SphereNode
+import com.google.android.filament.MaterialInstance
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -46,6 +48,32 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         private const val LABEL_WORLD_H      = LABEL_WORLD_W * LABEL_BMP_H.toFloat() / LABEL_BMP_W
     }
 
+    // Object pool for line-dot SphereNodes — avoids per-frame allocations
+    private inner class SphereNodePool(private val radius: Float) {
+        private val pool = ArrayDeque<SphereNode>(32)
+
+        fun acquire(mat: MaterialInstance): SphereNode {
+            val node = pool.removeLastOrNull()
+                ?: SphereNode(engine = sceneView.engine, radius = radius, materialInstance = mat)
+            node.materialInstance = mat
+            node.isVisible = true
+            return node
+        }
+
+        fun release(node: SphereNode) {
+            node.isVisible = false
+            runCatching { sceneView.removeChildNode(node) }
+            pool.addLast(node)
+        }
+
+        fun clear() {
+            pool.forEach { runCatching { it.destroy() } }
+            pool.clear()
+        }
+    }
+
+    private val lineDotPool = SphereNodePool(radius = LINE_DOT_RADIUS)
+
     private data class PeerNodes(
         val sphere: SphereNode,
         val lineDots: List<SphereNode>,
@@ -64,6 +92,8 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         val worldZ: Float
     )
 
+    private var lastLabelYawDeg = Float.NaN
+
     private val peerNodes  = mutableMapOf<Long, PeerNodes>()
     private val ghostNodes = mutableMapOf<Long, GhostNodes>()
     private var localSphere: SphereNode? = null
@@ -77,7 +107,6 @@ class ArNodeManager(private val sceneView: ARSceneView) {
             localSphere?.position = Position(wx, wy, wz)
             localLabel?.position  = Position(wx, wy + LABEL_Y_OFFSET, wz)
             localWorldPos = Triple(wx, wy, wz)
-            Log.d(TAG, "Local node repositioned to ($wx, $wy, $wz)")
             return
         }
         try {
@@ -110,7 +139,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     // Peer nodes
 
     fun hasPeer(peerId: Long): Boolean = peerNodes.containsKey(peerId)
-    fun peerIds(): Set<Long> = peerNodes.keys.toSet()
+    fun peerIds(): Set<Long> = peerNodes.keys
 
     fun getPeerPosition(peerId: Long): Triple<Float, Float, Float>? =
         peerNodes[peerId]?.let { Triple(it.worldX, it.worldY, it.worldZ) }
@@ -169,11 +198,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         val count = (length / LINE_DOT_SPACING).toInt().coerceAtLeast(1)
         return (0..count).map { i ->
             val t = i.toFloat() / count
-            SphereNode(
-                engine = sceneView.engine,
-                radius = LINE_DOT_RADIUS,
-                materialInstance = mat
-            ).also {
+            lineDotPool.acquire(mat).also {
                 it.position = Position(
                     fromX + dx * t,
                     fromY + dy * t,
@@ -185,10 +210,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     }
 
     private fun destroyLineDots(dots: List<SphereNode>) {
-        dots.forEach { dot ->
-            runCatching { sceneView.removeChildNode(dot) }
-            runCatching { dot.destroy() }
-        }
+        dots.forEach { dot -> lineDotPool.release(dot) }
     }
 
     fun removePeer(peerId: Long) {
@@ -255,10 +277,18 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     fun updateLabelOrientations() {
         val camPos = sceneView.cameraNode.worldPosition
+        val yawDeg = Math.toDegrees(atan2(camPos.x.toDouble(), camPos.z.toDouble())).toFloat()
+
+        if (!lastLabelYawDeg.isNaN()) {
+            val delta = abs(yawDeg - lastLabelYawDeg)
+            val normalizedDelta = if (delta > 180f) 360f - delta else delta
+            if (normalizedDelta < 2f) return
+        }
+        lastLabelYawDeg = yawDeg
+
         localLabel?.billboardYaw(camPos)
         peerNodes.values.forEach  { it.label?.billboardYaw(camPos) }
         ghostNodes.values.forEach { it.label?.billboardYaw(camPos) }
-        // No line refresh needed — dots are at fixed world positions
     }
 
     // Clear
@@ -278,6 +308,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         localLabel    = null
         localSphere   = null
         localWorldPos = null
+        lineDotPool.clear()
     }
 
     fun clearPeers() {
