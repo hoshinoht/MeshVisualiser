@@ -106,22 +106,27 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     private val lineDotPool = SphereNodePool(radius = LINE_DOT_RADIUS)
 
+    // Flyweight: single shared material instance for all line dots (same green color)
+    private val sharedLineMat: MaterialInstance by lazy {
+        createUnlitInstance(0.4f, 0.9f, 0.4f, 0.9f)
+    }
+
     // Pre-rendered circle bitmaps (created once, reused for all markers)
     private val localCircleBmp: Bitmap = makeCircleBitmap(0xFF, 0xCC, 0x33, 0xFF)   // Gold
     private val peerCircleBmp: Bitmap  = makeCircleBitmap(0x33, 0xCC, 0xFF, 0xE6)   // Cyan
     private val ghostCircleBmp: Bitmap = makeCircleBitmap(0x33, 0xCC, 0xFF, 0x4D)   // Cyan translucent
 
-    private data class PeerNodes(
+    // Mutable game object state — avoids data class copy() allocations on position updates
+    private class PeerNodes(
         val marker: ImageNode,
-        val lineDots: List<SphereNode>,
-        val lineMat: MaterialInstance,
+        var lineDots: List<SphereNode>,
         val label: ImageNode?,
-        val worldX: Float,
-        val worldY: Float,
-        val worldZ: Float
+        var worldX: Float,
+        var worldY: Float,
+        var worldZ: Float
     )
 
-    private data class GhostNodes(
+    private class GhostNodes(
         val marker: ImageNode,
         val label: ImageNode?,
         val worldX: Float,
@@ -135,7 +140,9 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     private val ghostNodes = mutableMapOf<Long, GhostNodes>()
     private var localMarker: ImageNode? = null
     private var localLabel: ImageNode?  = null
-    private var localWorldPos: Triple<Float, Float, Float>? = null
+    // Pre-allocated scratch buffer — avoids Triple allocation per frame
+    private val localWorldPosArr = FloatArray(3)
+    private var localWorldPosSet = false
 
     // Local node
 
@@ -143,7 +150,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         if (localMarker != null) {
             localMarker?.position = Position(wx, wy, wz)
             localLabel?.position  = Position(wx, wy + LABEL_Y_OFFSET, wz)
-            localWorldPos = Triple(wx, wy, wz)
+            setLocalWorldPos(wx, wy, wz)
             return
         }
         try {
@@ -155,8 +162,8 @@ class ArNodeManager(private val sceneView: ARSceneView) {
                 it.position = Position(wx, wy, wz)
                 sceneView.addChildNode(it)
             }
-            localLabel    = buildLabel(-1L, "$displayName (You)", wx, wy, wz)
-            localWorldPos = Triple(wx, wy, wz)
+            localLabel = buildLabel(-1L, "$displayName (You)", wx, wy, wz)
+            setLocalWorldPos(wx, wy, wz)
             Log.d(TAG, "Local node placed at ($wx, $wy, $wz) name=$displayName")
         } catch (e: Exception) {
             Log.e(TAG, "placeLocalNode error: ${e.message}")
@@ -166,7 +173,12 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     fun updateLocalPosition(wx: Float, wy: Float, wz: Float) {
         localMarker?.position = Position(wx, wy, wz)
         localLabel?.position  = Position(wx, wy + LABEL_Y_OFFSET, wz)
-        localWorldPos = Triple(wx, wy, wz)
+        setLocalWorldPos(wx, wy, wz)
+    }
+
+    private fun setLocalWorldPos(x: Float, y: Float, z: Float) {
+        localWorldPosArr[0] = x; localWorldPosArr[1] = y; localWorldPosArr[2] = z
+        localWorldPosSet = true
     }
 
     // Peer nodes
@@ -179,10 +191,8 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     fun addPeer(peerId: Long, wx: Float, wy: Float, wz: Float, label: String? = null) {
         if (hasPeer(peerId)) { Log.w(TAG, "addPeer: $peerId already placed"); return }
-        val lp = localWorldPos ?: run { Log.w(TAG, "addPeer: no local node yet"); return }
+        if (!localWorldPosSet) { Log.w(TAG, "addPeer: no local node yet"); return }
         try {
-            val lineMat = createUnlitInstance(0.4f, 0.9f, 0.4f, 0.9f)
-
             val marker = ImageNode(
                 materialLoader = sceneView.materialLoader,
                 bitmap = peerCircleBmp,
@@ -194,12 +204,12 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
             val lineDots = buildLineDots(
                 fromX = wx, fromY = wy, fromZ = wz,
-                toX = lp.first, toY = lp.second, toZ = lp.third,
-                mat = lineMat
+                toX = localWorldPosArr[0], toY = localWorldPosArr[1], toZ = localWorldPosArr[2],
+                mat = sharedLineMat
             )
 
             val labelNode = buildLabel(peerId, label, wx, wy, wz)
-            peerNodes[peerId] = PeerNodes(marker, lineDots, lineMat, labelNode, wx, wy, wz)
+            peerNodes[peerId] = PeerNodes(marker, lineDots, labelNode, wx, wy, wz)
             Log.d(TAG, "Added peer $peerId at ($wx, $wy, $wz) with ${lineDots.size} line dots")
         } catch (e: Exception) {
             Log.e(TAG, "addPeer error for $peerId: ${e.message}")
@@ -249,12 +259,13 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
         destroyLineDots(nodes.lineDots)
 
-        val lp = localWorldPos
-        val newDots = if (lp != null) {
-            buildLineDots(wx, wy, wz, lp.first, lp.second, lp.third, nodes.lineMat)
+        val newDots = if (localWorldPosSet) {
+            buildLineDots(wx, wy, wz, localWorldPosArr[0], localWorldPosArr[1], localWorldPosArr[2], sharedLineMat)
         } else emptyList()
 
-        peerNodes[peerId] = nodes.copy(worldX = wx, worldY = wy, worldZ = wz, lineDots = newDots)
+        // Mutable update — no copy() allocation
+        nodes.worldX = wx; nodes.worldY = wy; nodes.worldZ = wz
+        nodes.lineDots = newDots
         Log.d(TAG, "Updated peer $peerId to ($wx, $wy, $wz)")
     }
 
@@ -264,14 +275,14 @@ class ArNodeManager(private val sceneView: ARSceneView) {
 
     fun placeGhostNode(peerId: Long, name: String) {
         if (hasGhost(peerId) || hasPeer(peerId)) return
-        val lp = localWorldPos ?: return
+        if (!localWorldPosSet) return
         try {
             val count = ghostNodes.size
             val angle  = count * (2.0 * Math.PI / 6.0)
             val radius = 0.5f
-            val wx = lp.first  + (radius * cos(angle)).toFloat()
-            val wy = lp.second
-            val wz = lp.third  + (radius * sin(angle)).toFloat()
+            val wx = localWorldPosArr[0] + (radius * cos(angle)).toFloat()
+            val wy = localWorldPosArr[1]
+            val wz = localWorldPosArr[2] + (radius * sin(angle)).toFloat()
 
             val marker = ImageNode(
                 materialLoader = sceneView.materialLoader,
@@ -327,7 +338,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         localMarker?.destroyImageNodeSafely()
         localLabel    = null
         localMarker   = null
-        localWorldPos = null
+        localWorldPosSet = false
         lineDotPool.clear()
     }
 
@@ -421,7 +432,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
     private fun PeerNodes.destroySafely() {
         marker.destroyImageNodeSafely()
         destroyLineDots(lineDots)
-        runCatching { sceneView.engine.destroyMaterialInstance(lineMat) }
+        // sharedLineMat is NOT destroyed here — it's a flyweight shared across all peers
         label?.destroyImageNodeSafely()
     }
 

@@ -67,6 +67,9 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
             return MeshMessage(MessageType.CONFIG_SYNC.value, localId, "$udpDrop|$tcpDrop|$tcpTimeoutMs")
         }
 
+        // Reusable StringBuilder — avoids String interpolation allocation on hot path
+        private val poseSb = StringBuilder(64)
+
         fun poseUpdate(
             localId: Long,
             x: Float,
@@ -77,7 +80,10 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
             qz: Float,
             qw: Float
         ): MeshMessage {
-            return MeshMessage(MessageType.POSE_UPDATE.value, localId, "$x,$y,$z,$qx,$qy,$qz,$qw")
+            poseSb.setLength(0)
+            poseSb.append(x).append(',').append(y).append(',').append(z).append(',')
+                .append(qx).append(',').append(qy).append(',').append(qz).append(',').append(qw)
+            return MeshMessage(MessageType.POSE_UPDATE.value, localId, poseSb.toString())
         }
     }
 
@@ -90,19 +96,33 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
     /**
      * Parse pose data from POSE_UPDATE message. Supports both legacy 3-component (position only)
      * and full 7-component (position + quaternion) formats.
+     * Uses index-based parsing to avoid split() array allocation on network hot path.
      *
      * @return PoseData or null if parsing fails
      */
     fun parsePoseData(): PoseData? {
         return try {
-            val parts = data.split(",")
-            when (parts.size) {
+            val floats = FloatArray(7)
+            var start = 0
+            var idx = 0
+            for (i in data.indices) {
+                if (data[i] == ',') {
+                    floats[idx++] = data.substring(start, i).toFloat()
+                    start = i + 1
+                    if (idx >= 7) break
+                }
+            }
+            // Last segment (no trailing comma)
+            if (idx < 7 && start < data.length) {
+                floats[idx++] = data.substring(start).toFloat()
+            }
+            when (idx) {
                 7 -> PoseData(
-                    parts[0].toFloat(), parts[1].toFloat(), parts[2].toFloat(),
-                    parts[3].toFloat(), parts[4].toFloat(), parts[5].toFloat(), parts[6].toFloat()
+                    floats[0], floats[1], floats[2],
+                    floats[3], floats[4], floats[5], floats[6]
                 )
                 3 -> PoseData(
-                    parts[0].toFloat(), parts[1].toFloat(), parts[2].toFloat(),
+                    floats[0], floats[1], floats[2],
                     0f, 0f, 0f, 1f // identity rotation for backward compat
                 )
                 else -> null

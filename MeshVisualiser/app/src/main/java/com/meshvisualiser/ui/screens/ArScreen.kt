@@ -434,6 +434,10 @@ fun ArScreen(
     val sessionManagerRef = remember { arrayOfNulls<ArSessionManager>(1) }
     val cloudAnchorManagerRef = remember { arrayOfNulls<CloudAnchorManager>(1) }
     val unlitMaterialRef = remember { arrayOfNulls<com.google.android.filament.Material>(1) }
+    // Pre-created packet materials — flyweight: one per color, shared across all animations
+    val packetMats = remember { mutableMapOf<String, MaterialInstance>() }
+    // Pooled packet spheres — reuse instead of create/destroy per animation
+    val packetSpherePool = remember { ArrayDeque<SphereNode>(8) }
     val animatedEventIds = remember { mutableSetOf<Long>() }
     val allMaterials = remember { mutableListOf<MaterialInstance>() }
     val packetNodes = remember { mutableListOf<AnchorNode>() }
@@ -528,7 +532,8 @@ fun ArScreen(
             else nm.getPeerPosition(event.toId)
                 ?: run { viewModel.consumePacketEvent(event.id); return@forEach }
 
-            val color = when (event.type) {
+            val typeKey = event.type.ifEmpty { "TCP" }
+            val color = when (typeKey) {
                 "TCP" -> COLOR_TCP
                 "UDP" -> COLOR_UDP
                 "ACK" -> COLOR_ACK
@@ -548,7 +553,10 @@ fun ArScreen(
                         isDisposed = isDisposed,
                         allMaterials = allMaterials,
                         packetNodes = packetNodes,
-                        unlitMaterial = unlitMaterialRef[0]
+                        unlitMaterial = unlitMaterialRef[0],
+                        prebuiltMat = packetMats[typeKey],
+                        dropMat = packetMats["DROP"],
+                        spherePool = packetSpherePool
                     )
                 }
                 viewModel.consumePacketEvent(event.id)
@@ -624,6 +632,19 @@ fun ArScreen(
                             sv.materialLoader.createMaterial("materials/unlit_colored.filamat")
                         } catch (e: Exception) {
                             Log.w(TAG, "Unlit material not available: ${e.message}"); null
+                        }
+
+                        // Pre-create one material per packet color (flyweight)
+                        val um = unlitMaterialRef[0]
+                        if (um != null) {
+                            for ((key, color) in mapOf(
+                                "TCP" to COLOR_TCP, "UDP" to COLOR_UDP,
+                                "ACK" to COLOR_ACK, "DROP" to COLOR_DROP
+                            )) {
+                                val mi = sv.materialLoader.createInstance(um)
+                                mi.setParameter("baseColor", color.red, color.green, color.blue, color.alpha)
+                                packetMats[key] = mi
+                            }
                         }
 
                         val nm = ArNodeManager(sv)
@@ -708,7 +729,7 @@ fun ArScreen(
     }
 }
 
-// Packet animation
+// Packet animation — uses pre-built materials (flyweight) and pooled sphere nodes
 private suspend fun animatePacket(
     sv: ARSceneView,
     fromPos: Triple<Float, Float, Float>,
@@ -719,7 +740,10 @@ private suspend fun animatePacket(
     isDisposed: State<Boolean>,
     allMaterials: MutableList<MaterialInstance>,
     packetNodes: MutableList<AnchorNode>,
-    unlitMaterial: com.google.android.filament.Material? = null
+    unlitMaterial: com.google.android.filament.Material? = null,
+    prebuiltMat: MaterialInstance? = null,
+    dropMat: MaterialInstance? = null,
+    spherePool: ArrayDeque<SphereNode>? = null
 ) {
     val session = sv.session ?: return
     if (isDisposed.value) return
@@ -728,7 +752,8 @@ private suspend fun animatePacket(
     val stepMs = durationMs / steps
     val maxT = if (isDrop) 0.5f else 1.0f
 
-    val mat = if (unlitMaterial != null) {
+    // Use pre-built material if available, otherwise create one
+    val mat = prebuiltMat ?: if (unlitMaterial != null) {
         sv.materialLoader.createInstance(unlitMaterial).also {
             it.setParameter("baseColor", color.red, color.green, color.blue, color.alpha)
         }
@@ -737,14 +762,22 @@ private suspend fun animatePacket(
             color = color, metallic = 0f, roughness = 1f, reflectance = 0f
         )
     }
-    allMaterials.add(mat)
+    val matIsShared = prebuiltMat != null
+    if (!matIsShared) allMaterials.add(mat)
 
-    val sphere = SphereNode(sv.engine, radius = 0.025f, materialInstance = mat)
+    // Acquire sphere from pool or create new
+    val sphere = spherePool?.removeLastOrNull()?.also {
+        it.materialInstance = mat
+        it.isVisible = true
+    } ?: SphereNode(sv.engine, radius = 0.025f, materialInstance = mat)
+
     val startAnchor = try {
         session.createAnchor(Pose.makeTranslation(fromPos.first, fromPos.second, fromPos.third))
     } catch (e: Exception) {
         Log.e(TAG, "Packet anchor failed: ${e.message}")
-        allMaterials.remove(mat); sphere.destroy(); return
+        if (!matIsShared) allMaterials.remove(mat)
+        spherePool?.addLast(sphere) ?: sphere.destroy()
+        return
     }
 
     val node = AnchorNode(sv.engine, startAnchor).apply { addChildNode(sphere) }
@@ -763,22 +796,27 @@ private suspend fun animatePacket(
             delay(stepMs)
         }
         if (isDrop && !isDisposed.value) {
-            val dropMat = if (unlitMaterial != null) {
+            val dm = dropMat ?: if (unlitMaterial != null) {
                 sv.materialLoader.createInstance(unlitMaterial).also {
                     it.setParameter("baseColor", COLOR_DROP.red, COLOR_DROP.green, COLOR_DROP.blue, COLOR_DROP.alpha)
-                }
+                }.also { allMaterials.add(it) }
             } else {
                 sv.materialLoader.createColorInstance(
                     color = COLOR_DROP, metallic = 0f, roughness = 1f, reflectance = 0f
-                )
+                ).also { allMaterials.add(it) }
             }
-            allMaterials.add(dropMat)
-            sphere.materialInstance = dropMat
+            sphere.materialInstance = dm
             delay(300L)
         }
     } finally {
-        runCatching { sphere.destroy() }
+        // Release sphere back to pool instead of destroying
+        sphere.isVisible = false
         runCatching { if (!isDisposed.value) sv.removeChildNode(node) }
+        if (spherePool != null) {
+            spherePool.addLast(sphere)
+        } else {
+            runCatching { sphere.destroy() }
+        }
         runCatching { node.anchor.detach() }
         runCatching { node.destroy() }
         packetNodes.remove(node)

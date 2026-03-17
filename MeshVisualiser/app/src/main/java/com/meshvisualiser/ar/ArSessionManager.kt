@@ -37,13 +37,24 @@ class ArSessionManager(
     }
 
     private var frameCount = 0
-    private val lastPeerWorldPos = mutableMapOf<Long, Triple<Float, Float, Float>>()
+    // Pre-allocated scratch buffers — avoid Triple allocation per frame
+    private val lastPeerWorldPos = mutableMapOf<Long, FloatArray>()
     private val activeIdsScratch = HashSet<Long>(8)
     private var loggedSkipOnce = false
+    // Frame amortization: round-robin cursor for peer updates
+    private var peerUpdateCursor = 0
+    private val PEER_UPDATE_BUDGET = 3  // max peers to process per frame
 
     /** World-space position of the local device node (set after anchor placement). */
-    var localWorldPos: Triple<Float, Float, Float>? = null
-        private set
+    val localWorldPos: Triple<Float, Float, Float>?
+        get() = if (localWorldPosSet) Triple(localWorldPosArr[0], localWorldPosArr[1], localWorldPosArr[2]) else null
+    private val localWorldPosArr = FloatArray(3)
+    private var localWorldPosSet = false
+
+    private fun setLocalWorldPos(x: Float, y: Float, z: Float) {
+        localWorldPosArr[0] = x; localWorldPosArr[1] = y; localWorldPosArr[2] = z
+        localWorldPosSet = true
+    }
 
     fun onSessionUpdated(
         session: Session,
@@ -66,7 +77,7 @@ class ArSessionManager(
 
                 val localAnchor = session.createAnchor(Pose.makeTranslation(wx, wy, wz))
                 worldAnchor = localAnchor
-                localWorldPos = Triple(wx, wy, wz)
+                setLocalWorldPos(wx, wy, wz)
                 poseManager.setSharedAnchor(localAnchor)
 
                 // Place the local sphere at the anchor position (world space)
@@ -127,7 +138,7 @@ class ArSessionManager(
         val cy = camPose.ty() - 0.15f
         val cz = camPose.tz()
         if (!localPositionLocked) {
-            localWorldPos = Triple(cx, cy, cz)
+            setLocalWorldPos(cx, cy, cz)
             nodeManager.updateLocalPosition(cx, cy, cz)
 
             if (cloudAnchorReady) {
@@ -146,18 +157,33 @@ class ArSessionManager(
 
             activeIdsScratch.clear()
 
-            for (peer in peers.values) {
+            // Frame amortization: process peers in round-robin batches
+            val peerValues = peers.values
+            val peerList = peerValues.toList()  // snapshot for indexed access
+            val total = peerList.size
+            var processed = 0
+
+            for (i in 0 until total) {
+                val peer = peerList[i]
                 if (!peer.hasValidPeerId) continue
                 activeIdsScratch.add(peer.peerId)
 
+                // New peers and ghosts are always processed immediately (no amortization)
+                val isNewPeer = !nodeManager.hasPeer(peer.peerId) && !nodeManager.hasGhost(peer.peerId)
+                val isInBudget = processed < PEER_UPDATE_BUDGET ||
+                    ((i - peerUpdateCursor + total) % maxOf(total, 1)) < PEER_UPDATE_BUDGET
+
                 val hasPose = peer.relativeX != 0f || peer.relativeY != 0f || peer.relativeZ != 0f
                 if (!hasPose) {
-                    if (!nodeManager.hasGhost(peer.peerId) && !nodeManager.hasPeer(peer.peerId)) {
+                    if (isNewPeer) {
                         val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
                         nodeManager.placeGhostNode(peer.peerId, label)
                     }
                     continue
                 }
+
+                // Skip position updates for peers outside this frame's budget
+                if (!isNewPeer && !isInBudget && nodeManager.hasPeer(peer.peerId)) continue
 
                 val wx = ax + peer.relativeX
                 val wy = ay + peer.relativeY
@@ -166,22 +192,27 @@ class ArSessionManager(
                 if (nodeManager.hasPeer(peer.peerId)) {
                     val last = lastPeerWorldPos[peer.peerId]
                     if (last != null) {
-                        val dx = wx - last.first
-                        val dy = wy - last.second
-                        val dz = wz - last.third
+                        val dx = wx - last[0]
+                        val dy = wy - last[1]
+                        val dz = wz - last[2]
                         if (dx * dx + dy * dy + dz * dz < 0.000001f) continue
                     }
                     nodeManager.updatePeerPosition(peer.peerId, wx, wy, wz)
-                    lastPeerWorldPos[peer.peerId] = Triple(wx, wy, wz)
+                    val arr = lastPeerWorldPos.getOrPut(peer.peerId) { FloatArray(3) }
+                    arr[0] = wx; arr[1] = wy; arr[2] = wz
+                    processed++
                     continue
                 }
 
                 val label = peer.deviceModel.ifEmpty { peer.peerId.toString().takeLast(4) }
                 nodeManager.promoteGhost(peer.peerId)
                 nodeManager.addPeer(peerId = peer.peerId, wx = wx, wy = wy, wz = wz, label = label)
-                lastPeerWorldPos[peer.peerId] = Triple(wx, wy, wz)
+                val arr = lastPeerWorldPos.getOrPut(peer.peerId) { FloatArray(3) }
+                arr[0] = wx; arr[1] = wy; arr[2] = wz
                 Log.d(TAG, "Placed peer ${peer.peerId} at world ($wx, $wy, $wz)")
             }
+
+            peerUpdateCursor = (peerUpdateCursor + PEER_UPDATE_BUDGET) % maxOf(total, 1)
 
             // Remove disconnected peers
             for (id in nodeManager.peerIds().toList()) {
@@ -241,7 +272,7 @@ class ArSessionManager(
         val wx = pose.tx()
         val wy = pose.ty()
         val wz = pose.tz()
-        localWorldPos = Triple(wx, wy, wz)
+        setLocalWorldPos(wx, wy, wz)
         nodeManager.placeLocalNode(wx, wy, wz, localDeviceName)
         nodeManager.clearPeers()
         poseManager.resetBroadcast()
@@ -257,7 +288,7 @@ class ArSessionManager(
         hostingRequested = false
         resolveRequested = false
         lastResolvedAnchorId = null
-        localWorldPos = null
+        localWorldPosSet = false
         lastPeerWorldPos.clear()
         Log.d(TAG, "Session state reset")
         localPositionLocked = false
