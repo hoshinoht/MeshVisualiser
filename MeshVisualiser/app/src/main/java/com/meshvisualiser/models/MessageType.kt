@@ -32,7 +32,9 @@ enum class MessageType(val value: Int) {
     START_MESH(8),
 
     /** Sync simulation config (UDP/TCP drop %, TCP ACK timeout) to all peers */
-    CONFIG_SYNC(9);
+    CONFIG_SYNC(9),
+
+    ANIM_EVENT(10);
 
     companion object {
         fun fromValue(value: Int): MessageType? = entries.find { it.value == value }

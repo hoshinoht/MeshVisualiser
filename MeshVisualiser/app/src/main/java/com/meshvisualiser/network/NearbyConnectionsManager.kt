@@ -270,7 +270,7 @@ class NearbyConnectionsManager(
   }
 
   private fun startAdvertising() {
-    val advertisingOptions = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
+    val advertisingOptions = AdvertisingOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
 
     connectionsClient
             .startAdvertising(
@@ -294,7 +294,7 @@ class NearbyConnectionsManager(
   }
 
   private fun startDiscovery() {
-    val discoveryOptions = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_STAR).build()
+    val discoveryOptions = DiscoveryOptions.Builder().setStrategy(Strategy.P2P_CLUSTER).build()
 
     connectionsClient
             .startDiscovery(

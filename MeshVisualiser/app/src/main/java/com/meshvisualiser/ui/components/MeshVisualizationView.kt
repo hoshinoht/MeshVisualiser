@@ -61,13 +61,13 @@ fun MeshVisualizationView(
     onEventConsumed: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val validPeers = peers.values.filter { it.hasValidPeerId }
+    val validPeers = remember(peers) { peers.values.filter { it.hasValidPeerId } }
     val isLocalLeader = leaderId == localId
 
     // Build stable list of all node IDs (leader + followers).
     // Sorted so the list identity doesn't change when leaderId flips
     // (which would restart LaunchedEffect and cancel in-flight animations).
-    val allNodeIds = remember(leaderId, validPeers) {
+    val allNodeIds = remember(leaderId, peers) {
         val ids = mutableSetOf<Long>()
         if (leaderId > 0) ids.add(leaderId)
         ids.add(localId)

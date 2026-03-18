@@ -547,6 +547,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     addLog("IN", "ACK", senderId, senderModel,
                         "ACK for seq $ackSeq", message.toBytes().size, ackSeq, rtt)
                     triggerPacketAnimation("ACK", senderId, localId)
+                    relayAnimEvent(senderId, localId, "ACK")
                     if (rtt != null) narrator.onEvent(ProtocolNarrator.ProtocolEvent.TcpDelivered(senderModel, rtt))
                 } else if (parts.size >= 3 && parts[0] == "seq") {
                     // This is data
@@ -558,6 +559,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         addLog("IN", "DROP", senderId, senderModel,
                             "Packet dropped (simulated loss)", message.toBytes().size, seq)
                         triggerPacketAnimation("DROP", senderId, localId)
+                        relayAnimEvent(senderId, localId, "DROP")
                         return // No ACK sent — sender will retry after TCP_TIMEOUT_MS
                     }
 
@@ -569,6 +571,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         peerId = senderId, status = TransferStatus.DELIVERED
                     ))
                     triggerPacketAnimation("TCP", senderId, localId)
+                    relayAnimEvent(senderId, localId, "TCP")
                     // Wait for TCP animation to finish arriving, then ACK floats back at normal speed
                     val ackEndpointId = endpointId
                     viewModelScope.launch {
@@ -576,6 +579,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         nearbyManager.sendMessage(ackEndpointId, MeshMessage.dataTcpAck(localId, seq))
                         addLog("OUT", "ACK", senderId, senderModel, "ACK for seq $seq", 0, seq)
                         triggerPacketAnimation("ACK", localId, senderId)
+                        relayAnimEvent(localId, senderId, "ACK")
                     }
                 }
             }
@@ -590,6 +594,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         peerId = senderId, status = TransferStatus.DROPPED
                     ))
                     triggerPacketAnimation("DROP", senderId, localId)
+                    relayAnimEvent(senderId, localId, "DROP")
                     narrator.onEvent(ProtocolNarrator.ProtocolEvent.UdpDrop(senderModel))
                 } else {
                     addLog("IN", "UDP", senderId, senderModel,
@@ -600,6 +605,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         peerId = senderId, status = TransferStatus.DELIVERED
                     ))
                     triggerPacketAnimation("UDP", senderId, localId)
+                    relayAnimEvent(senderId, localId, "UDP")
                 }
             }
             else -> {}
@@ -607,13 +613,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun triggerPacketAnimation(type: String, fromId: Long, toId: Long) {
-        val event = PacketAnimEvent(
+        _packetAnimEvents.update { it + PacketAnimEvent(
             id = nextPacketAnimId++,
             fromId = fromId,
             toId = toId,
             type = type
-        )
-        _packetAnimEvents.update { it + event }
+        )}
     }
 
     private fun addLog(
@@ -950,6 +955,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         narrator.onEvent(ProtocolNarrator.ProtocolEvent.ElectionStarted(_peers.value.size))
     }
 
+    private fun relayAnimEvent(fromId: Long, toId: Long, type: String) {
+        if (!isInitialized) return
+        if (meshManager.isLeader) {
+            // Only send to bystanders — sender and receiver already played locally
+            _peers.value.values
+                .filter { it.peerId != fromId && it.peerId != toId }
+                .forEach { peer ->
+                    nearbyManager.sendMessage(peer.endpointId, MeshMessage.animEvent(localId, fromId, toId, type))
+                }
+        } else {
+            // Follower tells leader so leader can fan out to bystanders
+            val leaderPeer = _peers.value.values.find { it.peerId == _currentLeaderId.value }
+            leaderPeer?.let {
+                nearbyManager.sendMessage(it.endpointId, MeshMessage.animEvent(localId, fromId, toId, type))
+            }
+        }
+    }
+
     private fun initializeWithServiceId(serviceId: String) {
         if (isInitialized) {
             nearbyManager.cleanup()
@@ -989,6 +1012,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             Log.w("CloudAnchorSync", "Follower: received COORDINATOR message but data is blank")
                         }
                         meshManager.onMessageReceived(endpointId, message)
+                    }
+                    MessageType.ANIM_EVENT -> {
+                        val parts = message.data.split(":")
+                        if (parts.size == 3) {
+                            val fromId = parts[0].toLongOrNull()
+                            val toId = parts[1].toLongOrNull()
+                            val type = parts[2]
+                            if (fromId != null && toId != null) {
+                                // Only play locally if we're a bystander (not the original sender or receiver)
+                                if (localId != fromId && localId != toId) {
+                                    triggerPacketAnimation(type, fromId, toId)
+                                }
+
+                                // If we're the leader, fan out to bystanders only
+                                if (meshManager.isLeader) {
+                                    val senderPeerId = message.senderId
+                                    _peers.value.values
+                                        .filter { it.peerId != senderPeerId && it.peerId != fromId && it.peerId != toId }
+                                        .forEach { peer ->
+                                            nearbyManager.sendMessage(peer.endpointId, MeshMessage.animEvent(localId, fromId, toId, type))
+                                        }
+                                }
+                            }
+                        }
                     }
                     else ->
                         meshManager.onMessageReceived(endpointId, message)

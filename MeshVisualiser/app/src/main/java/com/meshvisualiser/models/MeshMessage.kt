@@ -67,6 +67,10 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
             return MeshMessage(MessageType.CONFIG_SYNC.value, localId, "$udpDrop|$tcpDrop|$tcpTimeoutMs")
         }
 
+        fun animEvent(localId: Long, fromId: Long, toId: Long, type: String): MeshMessage {
+            return MeshMessage(MessageType.ANIM_EVENT.value, localId, "$fromId:$toId:$type")
+        }
+
         // Reusable StringBuilder — avoids String interpolation allocation on hot path
         private val poseSb = StringBuilder(64)
 

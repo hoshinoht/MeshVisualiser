@@ -162,6 +162,15 @@ class MeshManager(
             peerEntry?.value?.updatePose(poseData.x, poseData.y, poseData.z)
 
             onPoseUpdate(senderId, poseData)
+
+            // If we're the leader, relay this pose to all OTHER peers
+            if (isLeader) {
+                validPeers.entries
+                    .filter { it.value.peerId != senderId }  // don't echo back to sender
+                    .forEach { (endpointId, _) ->
+                        nearbyManager.sendMessage(endpointId, message)
+                    }
+            }
         }
     }
 
