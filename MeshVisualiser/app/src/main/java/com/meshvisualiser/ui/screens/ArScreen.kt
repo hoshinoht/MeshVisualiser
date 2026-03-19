@@ -692,12 +692,6 @@ fun ArScreen(
                             packetSpherePool.forEach { runCatching { it.destroy() } }
                             packetSpherePool.clear()
 
-                            // Destroy Filament MaterialInstances to prevent GPU memory leak
-                            packetMats.values.forEach { mi -> runCatching { sv.engine.destroyMaterialInstance(mi) } }
-                            packetMats.clear()
-                            unlitMaterialRef[0]?.let { mat -> runCatching { sv.engine.destroyMaterial(mat) } }
-                            unlitMaterialRef[0] = null
-
                             nm.clearAll()
                             sm.reset()
                             cam.cleanup()
