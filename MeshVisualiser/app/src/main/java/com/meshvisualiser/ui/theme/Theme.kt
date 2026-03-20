@@ -16,6 +16,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+// Note: expressiveLightColorScheme / expressiveDarkColorScheme do not exist in
+// material3:1.5.0-alpha14. The standard lightColorScheme() / darkColorScheme()
+// constructors accept all M3 Expressive fixed/surface-container tokens directly.
+
 private val DarkColorScheme = darkColorScheme(
     primary = md_theme_dark_primary,
     onPrimary = md_theme_dark_onPrimary,
@@ -42,7 +46,26 @@ private val DarkColorScheme = darkColorScheme(
     outline = md_theme_dark_outline,
     inverseSurface = md_theme_dark_inverseSurface,
     inverseOnSurface = md_theme_dark_inverseOnSurface,
-    inversePrimary = md_theme_dark_inversePrimary
+    inversePrimary = md_theme_dark_inversePrimary,
+    // Surface container hierarchy
+    surfaceContainerLowest = SurfaceContainerLowest,
+    surfaceContainerLow = SurfaceContainerLow,
+    surfaceContainer = SurfaceContainer,
+    surfaceContainerHigh = SurfaceContainerHigh,
+    surfaceContainerHighest = SurfaceContainerHighest,
+    // Fixed tokens
+    primaryFixed = PrimaryFixed,
+    primaryFixedDim = PrimaryFixedDim,
+    onPrimaryFixed = OnPrimaryFixed,
+    onPrimaryFixedVariant = OnPrimaryFixedVariant,
+    secondaryFixed = SecondaryFixed,
+    secondaryFixedDim = SecondaryFixedDim,
+    onSecondaryFixed = OnSecondaryFixed,
+    onSecondaryFixedVariant = OnSecondaryFixedVariant,
+    tertiaryFixed = TertiaryFixed,
+    tertiaryFixedDim = TertiaryFixedDim,
+    onTertiaryFixed = OnTertiaryFixed,
+    onTertiaryFixedVariant = OnTertiaryFixedVariant
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -71,7 +94,20 @@ private val LightColorScheme = lightColorScheme(
     outline = md_theme_light_outline,
     inverseSurface = md_theme_light_inverseSurface,
     inverseOnSurface = md_theme_light_inverseOnSurface,
-    inversePrimary = md_theme_light_inversePrimary
+    inversePrimary = md_theme_light_inversePrimary,
+    // Fixed tokens (light uses same role values per M3 spec — fixed tokens are theme-independent)
+    primaryFixed = PrimaryFixed,
+    primaryFixedDim = PrimaryFixedDim,
+    onPrimaryFixed = OnPrimaryFixed,
+    onPrimaryFixedVariant = OnPrimaryFixedVariant,
+    secondaryFixed = SecondaryFixed,
+    secondaryFixedDim = SecondaryFixedDim,
+    onSecondaryFixed = OnSecondaryFixed,
+    onSecondaryFixedVariant = OnSecondaryFixedVariant,
+    tertiaryFixed = TertiaryFixed,
+    tertiaryFixedDim = TertiaryFixedDim,
+    onTertiaryFixed = OnTertiaryFixed,
+    onTertiaryFixedVariant = OnTertiaryFixedVariant
 )
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

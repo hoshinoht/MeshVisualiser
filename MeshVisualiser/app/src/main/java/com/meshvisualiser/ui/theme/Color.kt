@@ -97,6 +97,31 @@ val TopologyPoor = Color(0xFFEF5350)
 val SurfaceContainerLowest = Color(0xFF0A1F24)
 val SurfaceContainerLow = Color(0xFF112A30)
 
+// Surface container hierarchy — full M3 Expressive 5-level scale
+val SurfaceContainer = Color(0xFF1A3038)
+val SurfaceContainerHigh = Color(0xFF243A42)
+val SurfaceContainerHighest = Color(0xFF2E4550)
+
+// Fixed surface tokens for M3 Expressive
+val PrimaryFixed = Color(0xFFBCE9FF)
+val PrimaryFixedDim = Color(0xFF63D4FF)
+val OnPrimaryFixed = Color(0xFF001F2A)
+val OnPrimaryFixedVariant = Color(0xFF005F7A)
+
+val SecondaryFixed = Color(0xFF6FF6FC)
+val SecondaryFixedDim = Color(0xFF4CD9DF)
+val OnSecondaryFixed = Color(0xFF002021)
+val OnSecondaryFixedVariant = Color(0xFF006166)
+
+val TertiaryFixed = Color(0xFFFFD6FF)
+val TertiaryFixedDim = Color(0xFFEBB5ED)
+val OnTertiaryFixed = Color(0xFF310937)
+val OnTertiaryFixedVariant = Color(0xFF7A4580)
+
+// Semantic overlay tokens
+val GlassOverlayDark = Color(0x1AFFFFFF)
+val GlassOverlayLight = Color(0x1A000000)
+
 // Mesh visualization accents (for decorative background elements)
 val MeshAccent1 = Color(0xFF63D4FF) // cyan
 val MeshAccent2 = Color(0xFFEBB5ED) // lavender
