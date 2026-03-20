@@ -8,7 +8,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.meshvisualiser.ui.screens.ArScreen
-import com.meshvisualiser.ui.MainScreen
+import com.meshvisualiser.ui.screens.MainScreen
 import com.meshvisualiser.ui.MainViewModel
 import com.meshvisualiser.ui.screens.ConnectionScreen
 import com.meshvisualiser.ui.screens.OnboardingScreen
