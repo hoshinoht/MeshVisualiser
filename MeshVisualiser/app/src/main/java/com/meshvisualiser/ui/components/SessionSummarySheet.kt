@@ -16,16 +16,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -35,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SessionSummarySheet(
     summaryContent: String?,
@@ -47,6 +54,44 @@ fun SessionSummarySheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
+
+    // State for the "New Session" confirmation dialog
+    var showNewSessionDialog by remember { mutableStateOf(false) }
+
+    // New Session confirmation AlertDialog
+    if (showNewSessionDialog) {
+        AlertDialog(
+            onDismissRequest = { showNewSessionDialog = false },
+            title = {
+                Text(
+                    "Start New Session?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text(
+                    "This will end the current session and clear all session data. Are you sure?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                FilledTonalButton(
+                    onClick = {
+                        showNewSessionDialog = false
+                        onNewSession()
+                    }
+                ) {
+                    Text("Yes, New Session")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewSessionDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -68,6 +113,7 @@ fun SessionSummarySheet(
 
             when {
                 isLoading -> {
+                    // LoadingIndicator replaces CircularProgressIndicator
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -75,7 +121,7 @@ fun SessionSummarySheet(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        CircularProgressIndicator()
+                        LoadingIndicator()
                         Text(
                             "Generating your learning summary...",
                             style = MaterialTheme.typography.bodyMedium,
@@ -102,7 +148,11 @@ fun SessionSummarySheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         OutlinedButton(onClick = onRegenerate) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
                             Text("  Retry", style = MaterialTheme.typography.labelMedium)
                         }
                     }
@@ -133,18 +183,29 @@ fun SessionSummarySheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Copy button with ContentCopy leading icon
                         OutlinedButton(
                             onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Session Summary", summaryContent))
+                                val clipboard = context.getSystemService(
+                                    Context.CLIPBOARD_SERVICE
+                                ) as ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText("Session Summary", summaryContent)
+                                )
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
                             Text("  Copy")
                         }
+
+                        // New Session button — triggers confirmation dialog
                         FilledTonalButton(
-                            onClick = onNewSession,
+                            onClick = { showNewSessionDialog = true },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("New Session")

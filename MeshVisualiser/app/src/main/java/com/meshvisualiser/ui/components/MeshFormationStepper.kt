@@ -30,6 +30,7 @@ private data class StepInfo(
 private val steps = listOf(
     StepInfo("Discovering", "Finding nearby peers...", MeshState.DISCOVERING),
     StepInfo("Electing", "Bully algorithm in progress...", MeshState.ELECTING),
+    StepInfo("Resolving", "Establishing shared anchor...", MeshState.RESOLVING),
     StepInfo("Connected", "Mesh formed!", MeshState.CONNECTED)
 )
 

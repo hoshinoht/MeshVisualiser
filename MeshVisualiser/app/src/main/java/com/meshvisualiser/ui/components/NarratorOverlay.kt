@@ -5,8 +5,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,15 +15,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material3.Card
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,8 +40,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.ai.NarratorTemplates.NarratorMessage
+import kotlinx.coroutines.delay
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/**
+ * Overlay showing the latest 2 narrator messages with swipe-to-dismiss and 8-second auto-dismiss.
+ * An overflow [AssistChip] shows "+N more" when there are more than 2 queued messages.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun NarratorOverlay(
     messages: List<NarratorMessage>,
@@ -43,33 +55,56 @@ fun NarratorOverlay(
 ) {
     val spatialSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntOffset>()
 
+    // Show only the last 2 messages; calculate overflow count
+    val visibleMessages = messages.takeLast(2)
+    val overflowCount = (messages.size - 2).coerceAtLeast(0)
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        messages.forEach { message ->
-            AnimatedVisibility(
-                visible = true,
-                enter = slideInVertically(
-                    animationSpec = spatialSpec,
-                    initialOffsetY = { it / 2 }
-                ) + fadeIn(),
-                exit = slideOutVertically(
-                    animationSpec = spatialSpec,
-                    targetOffsetY = { it / 2 }
-                ) + fadeOut()
-            ) {
-                NarratorCard(
-                    message = message,
-                    onDismiss = { onDismiss(message) }
+        // Overflow badge — only visible when there are hidden older messages
+        if (overflowCount > 0) {
+            Box(modifier = Modifier.align(Alignment.End)) {
+                AssistChip(
+                    onClick = {},
+                    label = {
+                        Text(
+                            text = "+$overflowCount more",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                 )
+            }
+        }
+
+        visibleMessages.forEach { message ->
+            // key() ensures proper enter/exit animation per message identity
+            key(message.title + message.explanation.take(20)) {
+                AnimatedVisibility(
+                    visible = true,
+                    enter = slideInVertically(
+                        animationSpec = spatialSpec,
+                        initialOffsetY = { it / 2 }
+                    ) + fadeIn(),
+                    exit = slideOutVertically(
+                        animationSpec = spatialSpec,
+                        targetOffsetY = { it / 2 }
+                    ) + fadeOut()
+                ) {
+                    NarratorCard(
+                        message = message,
+                        onDismiss = { onDismiss(message) }
+                    )
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun NarratorCard(
     message: NarratorMessage,
@@ -77,71 +112,96 @@ private fun NarratorCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { expanded = !expanded },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        shape = MaterialTheme.shapes.medium
+    // 8-second auto-dismiss
+    LaunchedEffect(message.title, message.explanation) {
+        delay(8_000L)
+        onDismiss()
+    }
+
+    val dismissState = rememberSwipeToDismissBoxState()
+
+    // React to swipe completion: call onDismiss when user commits a swipe in either direction
+    LaunchedEffect(dismissState.currentValue) {
+        if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd
+            || dismissState.currentValue == SwipeToDismissBoxValue.EndToStart
+        ) {
+            onDismiss()
+        }
+    }
+
+    // SwipeToDismissBox: horizontal swipe (either direction) dismisses the card
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {},   // no visible background swipe indicator needed
+        enableDismissFromStartToEnd = true,
+        enableDismissFromEndToStart = true,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lightbulb,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = message.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(24.dp)
+        ElevatedCard(
+            modifier = Modifier
+                .fillMaxWidth(),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ),
+            shape = MaterialTheme.shapes.large,
+            onClick = { expanded = !expanded }
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Dismiss",
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        imageVector = Icons.Default.Lightbulb,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = message.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                val displayText = if (expanded) {
+                    message.explanation
+                } else {
+                    if (message.explanation.length > 100) {
+                        message.explanation.take(100) + "..."
+                    } else {
+                        message.explanation
+                    }
+                }
+
+                Text(
+                    text = displayText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                if (!expanded && message.explanation.length > 100) {
+                    Text(
+                        text = "Tap to read more",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                 }
-            }
-
-            val displayText = if (expanded) {
-                message.explanation
-            } else {
-                // Truncate to ~100 chars for compact view
-                if (message.explanation.length > 100) {
-                    message.explanation.take(100) + "..."
-                } else {
-                    message.explanation
-                }
-            }
-
-            Text(
-                text = displayText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            if (!expanded && message.explanation.length > 100) {
-                Text(
-                    text = "Tap to read more",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
             }
         }
     }
