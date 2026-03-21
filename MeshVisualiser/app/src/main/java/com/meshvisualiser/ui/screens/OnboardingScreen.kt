@@ -1,7 +1,5 @@
 package com.meshvisualiser.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,7 +11,10 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.NetworkWifi
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -22,12 +23,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import com.meshvisualiser.ui.PermissionHelper
-import com.meshvisualiser.ui.components.GlassSurface
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -94,7 +94,7 @@ fun OnboardingScreen(
             }
         }
 
-        // Bottom navigation
+        // Bottom navigation row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -103,7 +103,7 @@ fun OnboardingScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Skip button (hidden on last page)
+            // Skip button (hidden on last page) — TextButton hierarchy
             if (pagerState.currentPage < 2) {
                 TextButton(onClick = {
                     scope.launch { pagerState.animateScrollToPage(2) }
@@ -117,7 +117,7 @@ fun OnboardingScreen(
                 Spacer(modifier = Modifier.width(64.dp))
             }
 
-            // Page indicators — morphing pill
+            // Page indicators — morphing pill (existing logic preserved)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -147,7 +147,7 @@ fun OnboardingScreen(
                 }
             }
 
-            // Next / Grant Permissions button
+            // Next → Button; Grant Permissions → FilledTonalButton
             if (pagerState.currentPage < 2) {
                 Button(
                     onClick = {
@@ -159,7 +159,7 @@ fun OnboardingScreen(
                     Text("Next")
                 }
             } else {
-                Button(
+                FilledTonalButton(
                     onClick = {
                         if (allGranted) {
                             onComplete()
@@ -180,7 +180,7 @@ fun OnboardingScreen(
 
 @Composable
 private fun OnboardingPage(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     body: String
 ) {
@@ -188,11 +188,12 @@ private fun OnboardingPage(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        GlassSurface(
+        // ElevatedCard replaces GlassSurface
+        ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.extraLarge
         ) {
             Column(
                 modifier = Modifier.padding(32.dp),
@@ -232,16 +233,44 @@ private fun PermissionsPage(
     permissionDenied: Boolean,
     onRequestPermissions: () -> Unit
 ) {
-    data class PermissionItem(val label: String, val reason: String)
+    data class PermissionItem(
+        val label: String,
+        val reason: String,
+        val icon: ImageVector
+    )
 
     val permissions = buildList {
-        add(PermissionItem("Camera", "AR needs your camera to overlay the mesh on the real world"))
-        add(PermissionItem("Location", "Android requires location access to discover nearby Bluetooth & WiFi devices"))
+        add(
+            PermissionItem(
+                "Camera",
+                "AR needs your camera to overlay the mesh on the real world",
+                Icons.Default.Camera
+            )
+        )
+        add(
+            PermissionItem(
+                "Location",
+                "Android requires location access to discover nearby Bluetooth & WiFi devices",
+                Icons.Default.LocationOn
+            )
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            add(PermissionItem("Bluetooth", "Used to find and connect to other devices"))
+            add(
+                PermissionItem(
+                    "Bluetooth",
+                    "Used to find and connect to other devices",
+                    Icons.Default.Sensors
+                )
+            )
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(PermissionItem("Nearby WiFi", "Enables high-speed data transfer between peers"))
+            add(
+                PermissionItem(
+                    "Nearby WiFi",
+                    "Enables high-speed data transfer between peers",
+                    Icons.Default.NetworkWifi
+                )
+            )
         }
     }
 
@@ -249,11 +278,12 @@ private fun PermissionsPage(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        GlassSurface(
+        // ElevatedCard replaces GlassSurface
+        ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.extraLarge
         ) {
             Column(
                 modifier = Modifier.padding(32.dp),
@@ -277,26 +307,35 @@ private fun PermissionsPage(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // ListItem-based permission list with icon + supporting text
                 permissions.forEach { perm ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Text(
-                            text = perm.label,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.width(100.dp)
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = perm.label,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        leadingContent = {
+                            Icon(
+                                imageVector = perm.icon,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = perm.reason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = androidx.compose.ui.graphics.Color.Transparent
                         )
-                        Text(
-                            text = perm.reason,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                    )
                 }
 
                 if (permissionDenied) {

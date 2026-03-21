@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.meshvisualiser.ui.theme.LogTcp
+import com.meshvisualiser.ui.theme.LogUdp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.meshvisualiser.ar.ArSessionManager
 import com.meshvisualiser.ar.ArNodeManager
@@ -114,9 +116,9 @@ private fun ArHud(
                     .background(Color.Black.copy(alpha = 0.55f)),
                 contentAlignment = Alignment.Center
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                    shape = MaterialTheme.shapes.large,
+                @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+                ElevatedCard(
+                    shape = MaterialTheme.shapes.extraLarge,
                     modifier = Modifier.padding(32.dp)
                 ) {
                     Column(
@@ -124,10 +126,9 @@ private fun ArHud(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(48.dp)
-                        )
+                        // LoadingIndicator replaces CircularProgressIndicator
+                        @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+                        LoadingIndicator(modifier = Modifier.size(48.dp))
 
                         when (followerState) {
                             FollowerState.WaitingForLeader -> {
@@ -198,6 +199,7 @@ private fun ArHud(
                         }
                     }
                 }
+                // end ElevatedCard
             }
         }
 
@@ -338,7 +340,7 @@ private fun ArHud(
                             )
                             validPeers.forEach { peer ->
                                 val isSelected = peer.peerId == selectedPeerId
-                                FilterChip(
+                                InputChip(
                                     selected = isSelected,
                                     onClick = { onSelectPeer(if (isSelected) null else peer.peerId) },
                                     label = {
@@ -352,33 +354,47 @@ private fun ArHud(
                         }
                     }
 
-                    // Send buttons
+                    // Send buttons — SplitButtonLayout: TCP (leading) | UDP (trailing)
                     Surface(
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                         shape = MaterialTheme.shapes.medium
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            FilledTonalButton(
-                                onClick = onSendTcp,
-                                enabled = selectedPeerId != null,
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = COLOR_TCP.copy(alpha = 0.3f)
-                                )
-                            ) {
-                                Text("Send TCP", color = COLOR_TCP, style = MaterialTheme.typography.labelSmall)
-                            }
-                            FilledTonalButton(
-                                onClick = onSendUdp,
-                                enabled = selectedPeerId != null,
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = COLOR_UDP.copy(alpha = 0.3f)
-                                )
-                            ) {
-                                Text("Send UDP", color = COLOR_UDP, style = MaterialTheme.typography.labelSmall)
-                            }
+                        Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+                            SplitButtonLayout(
+                                leadingButton = {
+                                    FilledTonalButton(
+                                        onClick = onSendTcp,
+                                        enabled = selectedPeerId != null,
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = LogTcp.copy(alpha = 0.3f)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            "TCP",
+                                            color = LogTcp,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                },
+                                trailingButton = {
+                                    FilledTonalButton(
+                                        onClick = onSendUdp,
+                                        enabled = selectedPeerId != null,
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = LogUdp.copy(alpha = 0.3f)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            "UDP",
+                                            color = LogUdp,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                            )
                         }
                     }
                 }

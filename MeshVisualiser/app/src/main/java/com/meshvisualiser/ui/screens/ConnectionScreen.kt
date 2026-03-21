@@ -1,6 +1,11 @@
 package com.meshvisualiser.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,17 +20,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.PeerInfo
 import com.meshvisualiser.ui.ConnectionFlowState
 import com.meshvisualiser.ui.components.DiscoveryRadar
-import com.meshvisualiser.ui.components.GlassSurface
 import com.meshvisualiser.ui.components.HardwareChecklist
 import com.meshvisualiser.ui.components.HardwareIssue
 import com.meshvisualiser.ui.components.HardwareType
 import com.meshvisualiser.ui.theme.StatusConnected
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ConnectionScreen(
     displayName: String,
@@ -52,7 +58,7 @@ fun ConnectionScreen(
 
     LaunchedEffect(nearbyError) {
         nearbyError?.let { error ->
-            val result = snackbarHostState.showSnackbar(
+            snackbarHostState.showSnackbar(
                 message = error,
                 actionLabel = "Dismiss",
                 duration = SnackbarDuration.Long
@@ -74,10 +80,10 @@ fun ConnectionScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Join Group card
-            GlassSurface(
+            // ── Join Group card ──
+            ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large
+                shape = MaterialTheme.shapes.extraLarge
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
@@ -144,23 +150,25 @@ fun ConnectionScreen(
                                 && displayName.isNotBlank()
                                 && groupCode.isNotEmpty()
                                 && groupCodeError == null,
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         if (connectionState == ConnectionFlowState.JOINING) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
+                            // LoadingIndicator replaces CircularProgressIndicator
+                            LoadingIndicator(modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Text(if (connectionState == ConnectionFlowState.JOINING) "Joining..." else "Join Group")
+                        Text(
+                            if (connectionState == ConnectionFlowState.JOINING) "Joining..."
+                            else "Join Group"
+                        )
                     }
                 }
             }
 
-            // Lobby card (shown after joining)
+            // ── Lobby card (shown after joining) ──
             AnimatedVisibility(
                 visible = connectionState == ConnectionFlowState.IN_LOBBY
                         || connectionState == ConnectionFlowState.STARTING
@@ -168,9 +176,9 @@ fun ConnectionScreen(
                 Column {
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    GlassSurface(
+                    ElevatedCard(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.large
+                        shape = MaterialTheme.shapes.extraLarge
                     ) {
                         Column(
                             modifier = Modifier.padding(24.dp),
@@ -203,6 +211,8 @@ fun ConnectionScreen(
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
+
+                            // DiscoveryRadar — unchanged
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.Center,
@@ -224,10 +234,9 @@ fun ConnectionScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(vertical = 16.dp)
                                 )
-                                LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                // Wavy indeterminate progress indicator
+                                LinearWavyProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth()
                                 )
                             } else {
                                 Surface(
@@ -245,12 +254,8 @@ fun ConnectionScreen(
                                                     )
                                                 },
                                                 leadingContent = {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(10.dp)
-                                                            .clip(CircleShape)
-                                                            .background(StatusConnected)
-                                                    )
+                                                    // Animated presence dot with infinite pulse
+                                                    AnimatedPresenceDot()
                                                 },
                                                 trailingContent = {
                                                     Text(
@@ -274,7 +279,9 @@ fun ConnectionScreen(
                                 Surface(
                                     color = MaterialTheme.colorScheme.tertiaryContainer,
                                     shape = MaterialTheme.shapes.small,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp)
                                 ) {
                                     Column(modifier = Modifier.padding(12.dp)) {
                                         Text(
@@ -302,18 +309,19 @@ fun ConnectionScreen(
                                 onClick = onStartMesh,
                                 enabled = validPeerCount >= 1
                                         && connectionState == ConnectionFlowState.IN_LOBBY,
-                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
                                 shape = MaterialTheme.shapes.medium
                             ) {
                                 if (connectionState == ConnectionFlowState.STARTING) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
+                                    LoadingIndicator(modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                Text(if (connectionState == ConnectionFlowState.STARTING) "Starting..." else "Start Mesh")
+                                Text(
+                                    if (connectionState == ConnectionFlowState.STARTING) "Starting..."
+                                    else "Start Mesh"
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -335,4 +343,30 @@ fun ConnectionScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
     }
+}
+
+/**
+ * Animated presence dot: a pulsing circle using [rememberInfiniteTransition].
+ * Indicates the peer is actively connected.
+ */
+@Composable
+private fun AnimatedPresenceDot() {
+    val infiniteTransition = rememberInfiniteTransition(label = "presenceDotPulse")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotScale"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(10.dp)
+            .scale(scale)
+            .clip(CircleShape)
+            .background(StatusConnected)
+    )
 }
