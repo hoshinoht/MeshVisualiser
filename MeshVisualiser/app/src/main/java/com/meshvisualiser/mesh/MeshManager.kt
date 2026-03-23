@@ -43,6 +43,7 @@ class MeshManager(
 
     private var isWaitingForOk = false
     private var electionTimeoutRunnable: Runnable? = null
+    private var coordinatorTimeoutRunnable: Runnable? = null
     private var meshFormationTimeoutRunnable: Runnable? = null
 
     val isLeader: Boolean
@@ -56,7 +57,7 @@ class MeshManager(
             MessageType.HANDSHAKE -> handleHandshake(endpointId, senderId)
             MessageType.ELECTION -> handleElectionMessage(endpointId, senderId)
             MessageType.OK -> handleOkMessage(senderId)
-            MessageType.COORDINATOR -> handleCoordinatorMessage(senderId)
+            MessageType.COORDINATOR -> handleCoordinatorMessage(senderId, endpointId)
             MessageType.POSE_UPDATE -> handlePoseUpdate(senderId, message)
             else -> { /* Ignore */ }
         }
@@ -133,9 +134,15 @@ class MeshManager(
         Log.d(TAG, "Received ELECTION from $senderId")
 
         if (senderId < localId) {
-            Log.d(TAG, "Sender $senderId < localId $localId, replying OK and starting election")
+            Log.d(TAG, "Sender $senderId < localId $localId, replying OK")
             nearbyManager.sendMessage(endpointId, MeshMessage.ok(localId))
-            startElection()
+            // If we are already the leader, respond with COORDINATOR instead of restarting election
+            if (isLeader) {
+                Log.d(TAG, "Already leader — sending COORDINATOR instead of restarting election")
+                nearbyManager.sendMessage(endpointId, MeshMessage.coordinator(localId, ""))
+            } else {
+                startElection()
+            }
         }
     }
 
@@ -143,16 +150,35 @@ class MeshManager(
         Log.d(TAG, "Received OK from $senderId")
         isWaitingForOk = false
         electionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
+        // NET-M1: Post a secondary timeout — if no COORDINATOR arrives, restart the election
+        coordinatorTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        coordinatorTimeoutRunnable = Runnable {
+            if (_currentLeaderId.value == -1L || _meshState.value == MeshState.ELECTING) {
+                Log.d(TAG, "COORDINATOR timeout — no COORDINATOR received after OK, restarting election")
+                startElection()
+            }
+        }
+        handler.postDelayed(coordinatorTimeoutRunnable!!, MeshVisualizerApp.ELECTION_TIMEOUT_MS * 2)
     }
 
-    private fun handleCoordinatorMessage(leaderId: Long) {
-        Log.d(TAG, "Received COORDINATOR from $leaderId")
+    private fun handleCoordinatorMessage(senderId: Long, endpointId: String) {
+        Log.d(TAG, "Received COORDINATOR from $senderId")
 
-        _currentLeaderId.value = leaderId
+        // NET-C2: Validate Bully Algorithm invariant — COORDINATOR must come from a peer
+        // with ID >= localId, or a known peer (prevents spoofed coordinator claims)
+        val knownPeerIds = nearbyManager.getValidPeers().values.map { it.peerId }.toSet()
+        if (senderId < localId && senderId !in knownPeerIds) {
+            Log.w(TAG, "Ignoring COORDINATOR from $senderId — lower than localId $localId and not a known peer")
+            return
+        }
+
+        _currentLeaderId.value = senderId
         isWaitingForOk = false
         electionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        coordinatorTimeoutRunnable?.let { handler.removeCallbacks(it) }
         _meshState.value = MeshState.CONNECTED
-        onNewLeader(leaderId)
+        onNewLeader(senderId)
     }
 
     private fun handlePoseUpdate(senderId: Long, message: MeshMessage) {
@@ -192,6 +218,7 @@ class MeshManager(
     /** Cleanup resources. */
     fun cleanup() {
         electionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        coordinatorTimeoutRunnable?.let { handler.removeCallbacks(it) }
         meshFormationTimeoutRunnable?.let { handler.removeCallbacks(it) }
     }
 }

@@ -1,5 +1,6 @@
 package com.meshvisualiser.simulation
 
+import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -23,7 +24,8 @@ class CsmacdSimulator(
         private const val TRANSMIT_DURATION_MS = 300L
         private const val JAM_DURATION_MS = 300L
         private const val SLOT_TIME_MS = 200L
-        private const val MAX_RETRIES = 10
+        /** Max collision demos before guaranteed success — keeps UX snappy */
+        private const val MAX_COLLISION_DEMO = 2
         private const val BASE_COLLISION_PROB = 0.15
     }
 
@@ -40,7 +42,7 @@ class CsmacdSimulator(
     suspend fun simulateTransmission(peerCount: Int, onTransmitReady: suspend () -> Unit): Boolean = mutex.withLock {
         var attempt = 0
 
-        while (attempt < MAX_RETRIES) {
+        while (attempt < MAX_COLLISION_DEMO + 1) {
             // 1. SENSING
             updateState(CsmacdState(
                 currentState = CsmaState.SENSING,
@@ -51,13 +53,13 @@ class CsmacdSimulator(
             delay(SENSING_DURATION_MS)
 
             // 2. Check for collision (simulated)
-            val collisionProb = if (attempt < 2) {
+            val collisionProb = if (attempt < MAX_COLLISION_DEMO) {
                 (BASE_COLLISION_PROB * peerCount).coerceAtMost(0.6)
             } else {
-                0.0 // After 2 attempts, let it through for UX
+                0.0 // After MAX_COLLISION_DEMO attempts, let it through for UX
             }
 
-            val collision = Math.random() < collisionProb
+            val collision = Random.nextDouble() < collisionProb
 
             if (collision) {
                 // COLLISION detected
@@ -125,7 +127,7 @@ class CsmacdSimulator(
         updateState(CsmacdState(
             currentState = CsmaState.IDLE,
             collisionCount = attempt,
-            currentStep = "Transmission failed after $MAX_RETRIES attempts"
+            currentStep = "Transmission failed after ${MAX_COLLISION_DEMO + 1} attempts"
         ))
         return false
     }

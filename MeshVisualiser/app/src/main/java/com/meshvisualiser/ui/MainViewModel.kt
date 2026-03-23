@@ -99,6 +99,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private const val TCP_MAX_RETRIES = 3
         private const val MAX_LOG_ENTRIES = 100
         private const val RTT_HISTORY_SIZE = 20
+        /** Delay before receiver sends TCP ACK — must be less than _tcpAckTimeoutMs */
+        private const val TCP_ACK_DELAY_MS = 1500L
+        private val VALID_ANIM_TYPES = setOf("TCP", "UDP", "ACK", "DROP")
     }
 
     // Preferences
@@ -132,8 +135,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Fetch LLM config from backend on startup
         viewModelScope.launch {
             aiClient.getLlmConfig().onSuccess { config ->
-                _llmBaseUrl.value = config.llmBaseUrl
-                _llmModel.value = config.llmModel
+                config.llmBaseUrl?.let { _llmBaseUrl.value = it }
+                config.llmModel?.let { _llmModel.value = it }
             }
         }
     }
@@ -303,6 +306,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _cloudAnchorId = MutableStateFlow<String?>(null)
     val cloudAnchorId: StateFlow<String?> = _cloudAnchorId.asStateFlow()
     private var peerRebroadcastJob: Job? = null
+    /** Track which peers have already been synced with the cloud anchor COORDINATOR re-broadcast. */
+    private val syncedPeerIds = mutableSetOf<Long>()
     private val _anchorResolved = MutableStateFlow(false)
     val anchorResolved: StateFlow<Boolean> = _anchorResolved.asStateFlow()
 
@@ -581,7 +586,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Wait for TCP animation to finish arriving, then ACK floats back at normal speed
                     val ackEndpointId = endpointId
                     viewModelScope.launch {
-                        delay(1500L)
+                        delay(TCP_ACK_DELAY_MS)
                         nearbyManager.sendMessage(ackEndpointId, MeshMessage.dataTcpAck(localId, seq))
                         addLog("OUT", "ACK", senderId, senderModel, "ACK for seq $seq", 0, seq)
                         triggerPacketAnimation("ACK", localId, senderId)
@@ -923,7 +928,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_cloudAnchorId.value != null) return
         viewModelScope.launch {
             aiClient.getAnchor(roomCode).onSuccess { resp ->
-                if (resp.anchorId.isNotBlank() && _cloudAnchorId.value == null) {
+                if (resp.anchorId?.isNotBlank() == true && _cloudAnchorId.value == null) {
                     Log.d(TAG, "Got anchor from server: ${resp.anchorId}")
                     _cloudAnchorId.value = resp.anchorId
                 }
@@ -1002,12 +1007,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             beginMesh()
                         }
                     MessageType.CONFIG_SYNC -> {
-                        // Apply config from another device — no re-broadcast to avoid loops
-                        val parts = message.data.split("|")
-                        if (parts.size == 3) {
-                            parts[0].toFloatOrNull()?.let { _udpDropProbability.value = it.coerceIn(0f, 1f) }
-                            parts[1].toFloatOrNull()?.let { _tcpDropProbability.value = it.coerceIn(0f, 1f) }
-                            parts[2].toLongOrNull()?.let { _tcpAckTimeoutMs.value = it.coerceAtLeast(3000L) }
+                        // NET-M2: Only accept CONFIG_SYNC from the current leader
+                        if (message.senderId == _currentLeaderId.value) {
+                            val parts = message.data.split("|")
+                            if (parts.size == 3) {
+                                parts[0].toFloatOrNull()?.let { _udpDropProbability.value = it.coerceIn(0f, 1f) }
+                                parts[1].toFloatOrNull()?.let { _tcpDropProbability.value = it.coerceIn(0f, 1f) }
+                                parts[2].toLongOrNull()?.let { _tcpAckTimeoutMs.value = it.coerceAtLeast(3000L) }
+                            }
                         }
                     }
                     MessageType.COORDINATOR -> {
@@ -1025,7 +1032,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val fromId = parts[0].toLongOrNull()
                             val toId = parts[1].toLongOrNull()
                             val type = parts[2]
-                            if (fromId != null && toId != null) {
+                            // NET-M3: Validate ANIM_EVENT type field
+                            if (fromId != null && toId != null && type in VALID_ANIM_TYPES) {
                                 // Only play locally if we're a bystander (not the original sender or receiver)
                                 if (localId != fromId && localId != toId) {
                                     triggerPacketAnimation(type, fromId, toId)
@@ -1085,14 +1093,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         collectorJobs += viewModelScope.launch { nearbyManager.isAdvertising.collect { _nearbyIsAdvertising.value = it } }
         collectorJobs += viewModelScope.launch { nearbyManager.lastError.collect { _nearbyError.value = it } }
 
-        // Re-broadcast cloud anchor ID when a peer connects (leader only)
+        // Re-broadcast cloud anchor ID only when a NEW peer with valid ID appears (leader only)
         peerRebroadcastJob?.cancel()
+        syncedPeerIds.clear()
         peerRebroadcastJob = viewModelScope.launch {
             _peers.collect { peers ->
                 val anchorId = _cloudAnchorId.value ?: return@collect
                 if (!_isLeader.value) return@collect
-                if (peers.values.any { it.hasValidPeerId }) {
-                    Log.d(TAG, "Peer connected — re-broadcasting anchor ID: $anchorId")
+                val newValidPeers = peers.values
+                    .filter { it.hasValidPeerId && it.peerId !in syncedPeerIds }
+                if (newValidPeers.isNotEmpty()) {
+                    newValidPeers.forEach { syncedPeerIds.add(it.peerId) }
+                    Log.d(TAG, "New peer(s) connected — re-broadcasting anchor ID: $anchorId")
                     broadcastCloudAnchorId(anchorId)
                 }
             }
@@ -1248,7 +1260,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _aiTestState.value = AiTestState.Testing
         viewModelScope.launch {
             aiClient.testConnection()
-                .onSuccess { _aiTestState.value = AiTestState.Success(it.response) }
+                .onSuccess { _aiTestState.value = AiTestState.Success(it.response ?: "OK") }
                 .onFailure { _aiTestState.value = AiTestState.Error(it.message ?: "Connection failed") }
         }
     }

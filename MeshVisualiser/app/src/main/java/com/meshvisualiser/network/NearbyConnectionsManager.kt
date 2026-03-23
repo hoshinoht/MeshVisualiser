@@ -12,6 +12,8 @@ import com.meshvisualiser.models.MessageType
 import com.meshvisualiser.models.PeerInfo
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.*
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,8 +36,8 @@ class NearbyConnectionsManager(
 
   private val connectionsClient: ConnectionsClient = Nearby.getConnectionsClient(context)
 
-  // Track endpoints in pending/active connection state to prevent duplicate requests
-  private val pendingEndpoints = mutableSetOf<String>()
+  // Track endpoints in pending/active connection state to prevent duplicate requests (thread-safe)
+  private val pendingEndpoints: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
   private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
   private val _peers = MutableStateFlow<Map<String, PeerInfo>>(emptyMap())
@@ -238,10 +240,12 @@ class NearbyConnectionsManager(
       }
       MessageType.DEVICE_INFO -> {
         // Update peer's device model — use copy() so StateFlow detects the change
+        // NET-M4: Truncate device info data to 64 chars to prevent abuse
+        val truncatedData = message.data.take(64)
         _peers.update { currentPeers ->
           val peer = currentPeers[endpointId] ?: PeerInfo(endpointId = endpointId)
-          val updated = peer.copy(deviceModel = message.data)
-          Log.d(TAG, "Device info from $endpointId: ${message.data}")
+          val updated = peer.copy(deviceModel = truncatedData)
+          Log.d(TAG, "Device info from $endpointId: $truncatedData")
           currentPeers + (endpointId to updated)
         }
       }
@@ -325,10 +329,11 @@ class NearbyConnectionsManager(
     Log.d(TAG, "Stopped discovery and advertising")
   }
 
-  /** Disconnect from all endpoints. */
+  /** Disconnect from all endpoints. Atomically swaps peers to empty then disconnects the snapshot. */
   fun disconnectAll() {
-    _peers.value.keys.forEach { endpointId -> connectionsClient.disconnectFromEndpoint(endpointId) }
+    val snapshot = _peers.value
     _peers.value = emptyMap()
+    snapshot.keys.forEach { endpointId -> connectionsClient.disconnectFromEndpoint(endpointId) }
   }
 
   /** Send a message to a specific endpoint. */
@@ -346,7 +351,11 @@ class NearbyConnectionsManager(
   /** Broadcast a message to all connected peers. */
   fun broadcastMessage(message: MeshMessage) {
     val payload = Payload.fromBytes(message.toBytes())
-    _peers.value.keys.forEach { endpointId -> connectionsClient.sendPayload(endpointId, payload) }
+    val type = message.getMessageType()
+    _peers.value.keys.forEach { endpointId ->
+      connectionsClient.sendPayload(endpointId, payload)
+        .addOnFailureListener { e -> Log.e(TAG, "Failed to broadcast $type to $endpointId", e) }
+    }
   }
 
   /** Update a peer's pose immutably through the StateFlow. */

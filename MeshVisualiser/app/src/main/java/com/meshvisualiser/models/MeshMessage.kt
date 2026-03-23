@@ -1,5 +1,6 @@
 package com.meshvisualiser.models
 
+import android.util.Log
 import com.google.gson.Gson
 
 /** Parsed pose data from a POSE_UPDATE message. */
@@ -17,11 +18,14 @@ data class PoseData(
 data class MeshMessage(val type: Int, val senderId: Long, val data: String = "") {
     companion object {
         private val gson = Gson()
+        private const val MAX_PAYLOAD_BYTES = 4096
 
         fun fromBytes(bytes: ByteArray): MeshMessage? {
+            if (bytes.size > MAX_PAYLOAD_BYTES) return null
             return try {
                 gson.fromJson(String(bytes, Charsets.UTF_8), MeshMessage::class.java)
             } catch (e: Exception) {
+                Log.w("MeshMessage", "Failed to deserialize ${bytes.size}B payload: ${e.message}")
                 null
             }
         }
@@ -71,9 +75,6 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
             return MeshMessage(MessageType.ANIM_EVENT.value, localId, "$fromId:$toId:$type")
         }
 
-        // Reusable StringBuilder — avoids String interpolation allocation on hot path
-        private val poseSb = StringBuilder(64)
-
         fun poseUpdate(
             localId: Long,
             x: Float,
@@ -84,10 +85,8 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
             qz: Float,
             qw: Float
         ): MeshMessage {
-            poseSb.setLength(0)
-            poseSb.append(x).append(',').append(y).append(',').append(z).append(',')
-                .append(qx).append(',').append(qy).append(',').append(qz).append(',').append(qw)
-            return MeshMessage(MessageType.POSE_UPDATE.value, localId, poseSb.toString())
+            val data = "$x,$y,$z,$qx,$qy,$qz,$qw"
+            return MeshMessage(MessageType.POSE_UPDATE.value, localId, data)
         }
     }
 

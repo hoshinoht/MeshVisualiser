@@ -19,8 +19,8 @@ data class PeerInfo(
         /** Device model name (e.g. "Pixel 7") */
         val deviceModel: String = "",
 
-        /** Last update timestamp */
-        val lastUpdateMs: Long = System.currentTimeMillis()
+        /** Last update timestamp (0 = never updated) */
+        val lastUpdateMs: Long = 0L
 ) {
   val hasValidPeerId: Boolean
     get() = peerId != -1L
