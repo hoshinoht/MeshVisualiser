@@ -1,25 +1,12 @@
 package com.meshvisualiser.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Quiz
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Summarize
-import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meshvisualiser.models.MeshState
@@ -29,6 +16,7 @@ import com.meshvisualiser.ui.MainViewModel
 import com.meshvisualiser.ui.PeerEvent
 import com.meshvisualiser.ui.components.*
 import com.meshvisualiser.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -66,6 +54,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
 
     val mainSnackbarHostState = remember { SnackbarHostState() }
 
+    val snackbarScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         viewModel.peerEvents.collect { event ->
             val message = when (event) {
@@ -74,7 +63,9 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                 is PeerEvent.LeaderElected -> if (event.isLocal) "You are the leader!"
                     else "${event.name} elected as leader"
             }
-            mainSnackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+            snackbarScope.launch {
+                mainSnackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+            }
         }
     }
 
@@ -85,7 +76,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Auto-select peer when only one valid peer exists
-    val validPeers = peers.values.filter { it.hasValidPeerId }
+    val validPeers by remember(peers) { derivedStateOf { peers.values.filter { it.hasValidPeerId } } }
     LaunchedEffect(validPeers.size, selectedPeerId) {
         if (validPeers.size == 1 && selectedPeerId == null) {
             viewModel.selectPeer(validPeers.first().peerId)
@@ -134,180 +125,49 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             )
         }
 
-        // Bottom: Persistent control bar + floating toolbar
+        // Bottom: FAB menu + persistent control bar
         if (meshState == MeshState.RESOLVING || meshState == MeshState.CONNECTED) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
             ) {
-                // Floating action row
+                // Floating action menu (end-aligned)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    HorizontalFloatingToolbar(
-                        expanded = true,
-                        content = {
-                            BadgedBox(
-                                badge = { Badge { Text("${validPeers.size}") } }
-                            ) {
-                                IconButton(onClick = {}) {
-                                    Icon(Icons.Default.Group, contentDescription = "Peers")
-                                }
+                    MeshFabMenu(
+                        narratorEnabled = narratorEnabled,
+                        isLeader = isLeader,
+                        onNavigateToAr = onNavigateToAr,
+                        onStartQuiz = { viewModel.startQuiz() },
+                        onToggleNarrator = { viewModel.toggleNarrator() },
+                        onOpenWhatIf = { showWhatIfSheet = true },
+                        onOpenDataLogs = { showDataSheet = true },
+                        onOpenSummary = {
+                            if (sessionSummary.content == null && !sessionSummary.isLoading) {
+                                viewModel.generateSessionSummary()
                             }
+                            showSessionSummary = true
                         },
-                        trailingContent = {
-                            if (isLeader) {
-                                IconButton(onClick = {}) {
-                                    Icon(
-                                        Icons.Default.Star,
-                                        contentDescription = "Leader",
-                                        tint = StatusLeader
-                                    )
-                                }
-                            }
-                            // Narrator toggle
-                            IconButton(onClick = { viewModel.toggleNarrator() }) {
-                                Icon(
-                                    Icons.Default.Lightbulb,
-                                    contentDescription = "Narrator",
-                                    tint = if (narratorEnabled) MaterialTheme.colorScheme.primary
-                                           else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            // What-If explorer
-                            IconButton(onClick = { showWhatIfSheet = true }) {
-                                Icon(Icons.Default.Psychology, contentDescription = "What-If")
-                            }
-                            IconButton(onClick = {
-                                onNavigateToAr()
-                            }) {
-                                Icon(Icons.Default.ViewInAr, contentDescription = "AR")
-                            }
-                            IconButton(onClick = { viewModel.startQuiz() }) {
-                                Icon(Icons.Default.Quiz, contentDescription = "Quiz")
-                            }
-                            IconButton(onClick = { showDataSheet = true }) {
-                                Icon(Icons.Default.Code, contentDescription = "Logs")
-                            }
-                            // Session Summary
-                            IconButton(onClick = {
-                                if (sessionSummary.content == null && !sessionSummary.isLoading) {
-                                    viewModel.generateSessionSummary()
-                                }
-                                showSessionSummary = true
-                            }) {
-                                Icon(Icons.Default.Summarize, contentDescription = "Summary")
-                            }
-                            // AI Settings
-                            IconButton(onClick = { showAiSettings = true }) {
-                                Icon(Icons.Default.SmartToy, contentDescription = "AI Settings")
-                            }
-                        }
+                        onOpenAiSettings = { showAiSettings = true }
                     )
                 }
 
                 // Persistent bottom control bar
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                    tonalElevation = 6.dp
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-
-                        // Peer selector row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (validPeers.isEmpty()) {
-                                Text(
-                                    text = "Waiting for peers...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else {
-                                // Peer chips — tap to select target
-                                validPeers.forEach { peer ->
-                                    val isSelected = peer.peerId == selectedPeerId
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = {
-                                            viewModel.selectPeer(
-                                                if (isSelected) null else peer.peerId
-                                            )
-                                        },
-                                        label = {
-                                            Text(
-                                                text = peer.deviceModel.ifEmpty {
-                                                    peer.peerId.toString().takeLast(6)
-                                                },
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        },
-                                        leadingIcon = {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(StatusConnected)
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Mode toggle + send buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Compact mode toggle
-                            ModeSegmentedButton(
-                                selectedMode = transmissionMode,
-                                onModeSelected = { viewModel.setTransmissionMode(it) },
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            FilledTonalButton(
-                                onClick = { viewModel.sendTcpData() },
-                                enabled = selectedPeerId != null && !isTcpBusy,
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = LogTcp.copy(alpha = 0.3f)
-                                ),
-                                shape = MaterialTheme.shapes.small,
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text("TCP", color = LogTcp, style = MaterialTheme.typography.labelSmall)
-                            }
-                            FilledTonalButton(
-                                onClick = { viewModel.sendUdpData() },
-                                enabled = selectedPeerId != null,
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = LogUdp.copy(alpha = 0.3f)
-                                ),
-                                shape = MaterialTheme.shapes.small,
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text("UDP", color = LogUdp, style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
+                MeshControlBar(
+                    peers = validPeers.toList(),
+                    selectedPeerId = selectedPeerId,
+                    onSelectPeer = { viewModel.selectPeer(it) },
+                    transmissionMode = transmissionMode,
+                    onModeChanged = { viewModel.setTransmissionMode(it) },
+                    onSendTcp = { viewModel.sendTcpData() },
+                    onSendUdp = { viewModel.sendUdpData() },
+                    isTcpBusy = isTcpBusy
+                )
             }
         }
 
@@ -329,7 +189,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     }
 
     // ModalBottomSheet for full Data Exchange log
-    if (showDataSheet && peers.isNotEmpty()) {
+    if (showDataSheet) {
         ModalBottomSheet(
             onDismissRequest = { showDataSheet = false },
             sheetState = sheetState,

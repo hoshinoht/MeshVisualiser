@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.MyLocation
 
 private const val TAG = "ArScreen"
+private const val ANCHOR_READY_STATUS = "Shared anchor ready"
 
 /**
  * Fires [onBeforeDetach] before the base class tears down Filament resources,
@@ -735,7 +736,7 @@ fun ArScreen(
             cloudAnchorStatus = cloudAnchorStatus,
             isLeader = isLeader,
             cloudAnchorId = cloudAnchorId,
-            anchorResolved = anchorResolved || isLeader && cloudAnchorStatus == "Shared anchor ready",
+            anchorResolved = anchorResolved || isLeader && cloudAnchorStatus == ANCHOR_READY_STATUS,
             onSelectPeer = { viewModel.selectPeer(it) },
             onSendTcp = { viewModel.sendTcpData() },
             onSendUdp = { viewModel.sendUdpData() },

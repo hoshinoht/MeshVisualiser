@@ -242,6 +242,11 @@ fun MeshVisualizationView(
     val blobMatrix3 = remember { Matrix() }
     val blobMatrix4 = remember { Matrix() }
 
+    // Pre-allocated objects reused every frame to reduce GC pressure
+    val curvePath1Ref = remember { androidx.compose.ui.graphics.Path() }
+    val curvePath2Ref = remember { androidx.compose.ui.graphics.Path() }
+    val nodePositionsRef = remember { mutableMapOf<Long, Offset>() }
+
     Canvas(modifier = modifier.fillMaxSize()) {
         val centerX = size.width / 2f
         val centerY = size.height * 0.38f
@@ -316,8 +321,8 @@ fun MeshVisualizationView(
             )
         }
 
-        // Flowing bezier curves
-        val curvePath1 = androidx.compose.ui.graphics.Path().apply {
+        // Flowing bezier curves (reuse paths to avoid per-frame allocations)
+        val curvePath1 = curvePath1Ref.apply { reset() }.apply {
             moveTo(0f, size.height * 0.3f)
             cubicTo(
                 size.width * 0.25f, size.height * 0.15f,
@@ -331,7 +336,7 @@ fun MeshVisualizationView(
             style = Stroke(width = 1.2f, cap = StrokeCap.Round)
         )
 
-        val curvePath2 = androidx.compose.ui.graphics.Path().apply {
+        val curvePath2 = curvePath2Ref.apply { reset() }.apply {
             moveTo(size.width * 0.1f, size.height * 0.85f)
             cubicTo(
                 size.width * 0.4f, size.height * 0.6f,
@@ -348,7 +353,8 @@ fun MeshVisualizationView(
         // ============================
         // 2. BUILD NODE POSITIONS
         // ============================
-        val nodePositions = mutableMapOf<Long, Offset>()
+        nodePositionsRef.clear()
+        val nodePositions = nodePositionsRef
 
         val effectiveLeaderId = if (leaderId > 0) leaderId else localId
         nodePositions[effectiveLeaderId] = Offset(centerX, centerY)

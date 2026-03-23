@@ -52,71 +52,6 @@ import java.util.Locale
 private const val TCP_MAX_RETRIES_UI = 3
 
 @Composable
-fun DataExchangePeek(
-    transmissionMode: TransmissionMode,
-    onModeChanged: (TransmissionMode) -> Unit,
-    selectedPeerId: Long?,
-    onSendTcp: () -> Unit,
-    onSendUdp: () -> Unit,
-    isTcpBusy: Boolean = false,
-    onExpand: () -> Unit
-) {
-    Column(modifier = Modifier.padding(12.dp)) {
-        // Mode toggle
-        ModeSegmentedButton(
-            selectedMode = transmissionMode,
-            onModeSelected = onModeChanged,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-        )
-
-        // Send buttons
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "Data Exchange",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            FilledTonalButton(
-                onClick = onSendTcp,
-                enabled = selectedPeerId != null && !isTcpBusy,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = LogTcp.copy(alpha = 0.3f)
-                ),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("Send TCP", color = LogTcp, style = MaterialTheme.typography.labelSmall)
-            }
-            FilledTonalButton(
-                onClick = onSendUdp,
-                enabled = selectedPeerId != null,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = LogUdp.copy(alpha = 0.3f)
-                ),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("Send UDP", color = LogUdp, style = MaterialTheme.typography.labelSmall)
-            }
-        }
-
-        if (selectedPeerId == null) {
-            Text(
-                text = "Select a peer above to send data",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-        }
-    }
-}
-
-@Composable
 fun DataExchangePanel(
     dataLogs: List<DataLogEntry>,
     transferEvents: List<TransferEvent>,
@@ -255,7 +190,7 @@ fun DataExchangePanel(
                 Text(
                     text = "${(tcpDropProbability * 100).toInt()}%",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF2196F3),
+                    color = LogTcp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -265,9 +200,9 @@ fun DataExchangePanel(
                 valueRange = 0f..1f,
                 modifier = Modifier.fillMaxWidth(),
                 colors = SliderDefaults.colors(
-                    thumbColor = Color(0xFF2196F3),
-                    activeTrackColor = Color(0xFF2196F3),
-                    inactiveTrackColor = Color(0xFF2196F3).copy(alpha = 0.2f)
+                    thumbColor = LogTcp,
+                    activeTrackColor = LogTcp,
+                    inactiveTrackColor = LogTcp.copy(alpha = 0.2f)
                 )
             )
         }
@@ -287,7 +222,7 @@ fun DataExchangePanel(
                 Text(
                     text = "${tcpAckTimeoutMs}ms",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.outline,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -297,9 +232,9 @@ fun DataExchangePanel(
                 valueRange = 3000f..10000f,
                 modifier = Modifier.fillMaxWidth(),
                 colors = SliderDefaults.colors(
-                    thumbColor = Color.Gray,
-                    activeTrackColor = Color.Gray,
-                    inactiveTrackColor = Color.Gray.copy(alpha = 0.2f)
+                    thumbColor = MaterialTheme.colorScheme.outline,
+                    activeTrackColor = MaterialTheme.colorScheme.outline,
+                    inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                 )
             )
         }

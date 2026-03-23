@@ -228,18 +228,18 @@ private fun OnboardingPage(
     }
 }
 
+private data class PermissionItem(
+    val label: String,
+    val reason: String,
+    val icon: ImageVector
+)
+
 @Composable
 private fun PermissionsPage(
     permissionDenied: Boolean,
     onRequestPermissions: () -> Unit
 ) {
-    data class PermissionItem(
-        val label: String,
-        val reason: String,
-        val icon: ImageVector
-    )
-
-    val permissions = buildList {
+    val permissions = remember { buildList {
         add(
             PermissionItem(
                 "Camera",
@@ -272,7 +272,7 @@ private fun PermissionsPage(
                 )
             )
         }
-    }
+    } }
 
     Box(
         modifier = Modifier.fillMaxSize(),

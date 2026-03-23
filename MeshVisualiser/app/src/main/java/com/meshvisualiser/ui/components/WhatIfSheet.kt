@@ -50,20 +50,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.ai.ScenarioExplorer.WhatIfExchange
 
-// Chat bubble shapes for asymmetric corners
-private val UserBubbleShape = RoundedCornerShape(
-    topStart = 20.dp,
-    topEnd = 20.dp,
-    bottomEnd = 4.dp,
-    bottomStart = 20.dp
-)
+import com.meshvisualiser.ui.theme.ChatBubbleUser
+import com.meshvisualiser.ui.theme.ChatBubbleAi
 
-private val AiBubbleShape = RoundedCornerShape(
-    topStart = 20.dp,
-    topEnd = 20.dp,
-    bottomEnd = 20.dp,
-    bottomStart = 4.dp
-)
+// Aliases for readability (tokens defined in Shape.kt)
+private val UserBubbleShape = ChatBubbleUser
+private val AiBubbleShape = ChatBubbleAi
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable

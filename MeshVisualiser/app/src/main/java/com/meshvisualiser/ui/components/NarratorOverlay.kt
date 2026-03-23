@@ -112,19 +112,25 @@ private fun NarratorCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    // 8-second auto-dismiss
+    var isDismissed by remember { mutableStateOf(false) }
+
+    // 8-second auto-dismiss — guarded to prevent double-dismiss
     LaunchedEffect(message.title, message.explanation) {
         delay(8_000L)
-        onDismiss()
+        if (!isDismissed) {
+            isDismissed = true
+            onDismiss()
+        }
     }
 
     val dismissState = rememberSwipeToDismissBoxState()
 
     // React to swipe completion: call onDismiss when user commits a swipe in either direction
     LaunchedEffect(dismissState.currentValue) {
-        if (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd
-            || dismissState.currentValue == SwipeToDismissBoxValue.EndToStart
+        if (!isDismissed && (dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd
+            || dismissState.currentValue == SwipeToDismissBoxValue.EndToStart)
         ) {
+            isDismissed = true
             onDismiss()
         }
     }
@@ -165,7 +171,7 @@ private fun NarratorCard(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
-                        onClick = onDismiss,
+                        onClick = { if (!isDismissed) { isDismissed = true; onDismiss() } },
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(

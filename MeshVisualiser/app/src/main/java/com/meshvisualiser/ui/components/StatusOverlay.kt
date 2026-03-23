@@ -13,6 +13,7 @@ import com.meshvisualiser.models.MeshState
 import com.meshvisualiser.ui.theme.StatusConnected
 import com.meshvisualiser.ui.theme.StatusDiscovering
 import com.meshvisualiser.ui.theme.StatusElecting
+import com.meshvisualiser.ui.theme.StatusResolving
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -26,7 +27,7 @@ fun StatusOverlay(
         targetValue = when (meshState) {
             MeshState.DISCOVERING -> StatusDiscovering
             MeshState.ELECTING -> StatusElecting
-            MeshState.RESOLVING -> StatusElecting
+            MeshState.RESOLVING -> StatusResolving
             MeshState.CONNECTED -> StatusConnected
         },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
