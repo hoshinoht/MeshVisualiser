@@ -25,6 +25,7 @@ class AiClient(
         private const val TAG = "AiClient"
         const val DEFAULT_SERVER_URL = "https://mesh.hoshinoht.dev"
         private const val TIMEOUT_SECONDS = 60L
+        private const val MAX_BODY_BYTES = 64 * 1024
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 
@@ -48,8 +49,8 @@ class AiClient(
     )
 
     data class NarrateResponse(
-        val title: String,
-        val explanation: String
+        val title: String?,
+        val explanation: String?
     )
 
     suspend fun narrate(events: List<String>, meshStateContext: String): Result<NarrateResponse> =
@@ -69,7 +70,7 @@ class AiClient(
     )
 
     data class WhatIfResponse(
-        val answer: String
+        val answer: String?
     )
 
     suspend fun whatIf(
@@ -88,7 +89,7 @@ class AiClient(
     )
 
     data class SummaryResponse(
-        val summary: String
+        val summary: String?
     )
 
     suspend fun summary(
@@ -101,10 +102,10 @@ class AiClient(
     // ── LLM Config (on the backend) ──
 
     data class LlmConfigResponse(
-        @SerializedName("llm_base_url") val llmBaseUrl: String,
-        @SerializedName("llm_model") val llmModel: String,
-        @SerializedName("has_api_key") val hasApiKey: Boolean,
-        @SerializedName("api_key_hint") val apiKeyHint: String
+        @SerializedName("llm_base_url") val llmBaseUrl: String?,
+        @SerializedName("llm_model") val llmModel: String?,
+        @SerializedName("has_api_key") val hasApiKey: Boolean?,
+        @SerializedName("api_key_hint") val apiKeyHint: String?
     )
 
     data class LlmConfigUpdate(
@@ -121,7 +122,7 @@ class AiClient(
 
     // ── Test Connection ──
 
-    data class TestResponse(val response: String)
+    data class TestResponse(val response: String?)
 
     suspend fun testConnection(): Result<TestResponse> =
         post("/ai/test", emptyMap<String, String>(), TestResponse::class.java)
@@ -129,7 +130,7 @@ class AiClient(
     // ── Room / Anchor ──
 
     data class AnchorResponse(
-        @SerializedName("anchor_id") val anchorId: String
+        @SerializedName("anchor_id") val anchorId: String?
     )
 
     suspend fun putAnchor(roomCode: String, anchorId: String): Result<Unit> =
@@ -139,7 +140,7 @@ class AiClient(
         get("/rooms/$roomCode/anchor", AnchorResponse::class.java)
 
     data class LeaderResponse(
-        @SerializedName("leader_id") val leaderId: String
+        @SerializedName("leader_id") val leaderId: String?
     )
 
     suspend fun putLeader(roomCode: String, leaderId: String): Result<Unit> =
@@ -159,8 +160,9 @@ class AiClient(
                     .get()
                     .build()
 
-                val response = client.newCall(request).execute()
-                parseResponse(response, responseType)
+                client.newCall(request).execute().use { response ->
+                    parseResponse(response, responseType)
+                }
             } catch (e: IOException) {
                 Log.e(TAG, "GET $path failed: ${e.message}")
                 Result.failure(e)
@@ -177,8 +179,9 @@ class AiClient(
                     .post(json.toRequestBody(JSON_MEDIA_TYPE))
                     .build()
 
-                val response = client.newCall(request).execute()
-                parseResponse(response, responseType)
+                client.newCall(request).execute().use { response ->
+                    parseResponse(response, responseType)
+                }
             } catch (e: IOException) {
                 Log.e(TAG, "POST $path failed: ${e.message}")
                 Result.failure(e)
@@ -222,6 +225,9 @@ class AiClient(
             return Result.failure(IOException(errorMsg))
         }
         if (body == null) return Result.failure(IOException("Empty response"))
+        if (body.length > MAX_BODY_BYTES) {
+            return Result.failure(IOException("Response body too large: ${body.length} bytes (max $MAX_BODY_BYTES)"))
+        }
         return try {
             Result.success(gson.fromJson(body, responseType))
         } catch (e: Exception) {

@@ -48,14 +48,6 @@ object NarratorTemplates {
                 "but lost packets are simply gone. Video streaming and gaming accept this trade-off."
         )
 
-    fun udpSent(peerModel: String): NarratorMessage =
-        NarratorMessage(
-            title = "UDP Sent",
-            explanation = "Packet fired off to $peerModel with no delivery guarantee. " +
-                "UDP is 'fire and forget' — the sender moves on immediately. " +
-                "This makes it faster than TCP for time-sensitive data like voice calls."
-        )
-
     // --- CSMA/CD Events ---
 
     fun firstCollision(peerCount: Int): NarratorMessage =

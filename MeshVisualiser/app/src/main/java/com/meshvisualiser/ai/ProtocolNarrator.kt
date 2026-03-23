@@ -1,5 +1,6 @@
 package com.meshvisualiser.ai
 
+import android.os.Looper
 import android.util.Log
 import com.meshvisualiser.ai.NarratorTemplates.NarratorMessage
 import kotlinx.coroutines.CoroutineScope
@@ -75,6 +76,9 @@ class ProtocolNarrator(
     }
 
     fun onEvent(event: ProtocolEvent) {
+        check(Looper.myLooper() == Looper.getMainLooper()) {
+            "onEvent() must be called on the main thread"
+        }
         if (!enabled) return
 
         // Try template first for common events
@@ -171,11 +175,17 @@ class ProtocolNarrator(
                 val result = aiClient.narrate(eventDescriptions, snapshot.toReadableContext())
 
                 result.onSuccess { response ->
-                    postMessage(NarratorMessage(
-                        title = response.title,
-                        explanation = response.explanation,
-                        isTemplate = false
-                    ))
+                    val title = response.title
+                    val explanation = response.explanation
+                    if (title != null && explanation != null) {
+                        postMessage(NarratorMessage(
+                            title = title,
+                            explanation = explanation,
+                            isTemplate = false
+                        ))
+                    } else {
+                        Log.w(TAG, "Backend narration returned null fields")
+                    }
                 }
 
                 result.onFailure { e ->

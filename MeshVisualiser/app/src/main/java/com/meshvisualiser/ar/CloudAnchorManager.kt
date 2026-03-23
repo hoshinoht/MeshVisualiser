@@ -1,5 +1,7 @@
 package com.meshvisualiser.ar
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.meshvisualiser.MeshVisualizerApp
 import com.google.ar.core.Anchor
@@ -43,53 +45,54 @@ class CloudAnchorManager(
         }
     }
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     fun hostAnchor(localAnchor: Anchor) {
         val session = this.session ?: run {
-            Log.e("CloudAnchorSync", "Leader: hostAnchor called but session is NULL")
+            Log.e(TAG, "Leader: hostAnchor called but session is NULL")
             onError("AR session not configured"); return
         }
-        Log.d("CloudAnchorSync", "Leader: calling hostCloudAnchorAsync...")
+        Log.d(TAG, "Leader: calling hostCloudAnchorAsync...")
         try {
             session.hostCloudAnchorAsync(localAnchor, MeshVisualizerApp.CLOUD_ANCHOR_TTL_DAYS) { cloudAnchorId, state ->
-                Log.d("CloudAnchorSync", "Leader: hostCloudAnchorAsync callback — state=$state, id=$cloudAnchorId")
+                Log.d(TAG, "Leader: hostCloudAnchorAsync callback — state=$state, id=$cloudAnchorId")
                 if (state == Anchor.CloudAnchorState.SUCCESS) {
-                    Log.d("CloudAnchorSync", "Leader: hosting SUCCESS, id=$cloudAnchorId")
-                    onAnchorHosted(cloudAnchorId, localAnchor)
+                    Log.d(TAG, "Leader: hosting SUCCESS, id=$cloudAnchorId")
+                    mainHandler.post { onAnchorHosted(cloudAnchorId, localAnchor) }
                 } else {
-                    Log.e("CloudAnchorSync", "Leader: hosting FAILED with state=$state")
-                    onError("Hosting failed: $state")
+                    Log.e(TAG, "Leader: hosting FAILED with state=$state")
+                    mainHandler.post { onError("Hosting failed: $state") }
                 }
             }
         } catch (e: Exception) {
-            Log.e("CloudAnchorSync", "Leader: exception during hostCloudAnchorAsync — ${e.message}", e)
+            Log.e(TAG, "Leader: exception during hostCloudAnchorAsync — ${e.message}", e)
             onError("Hosting exception: ${e.message}")
         }
     }
 
     fun resolveAnchor(cloudAnchorId: String) {
         val session = this.session ?: run {
-            Log.e("CloudAnchorSync", "Follower: resolveAnchor called but session is NULL")
+            Log.e(TAG, "Follower: resolveAnchor called but session is NULL")
             onError("AR session not configured"); return
         }
-        Log.d("CloudAnchorSync", "Follower: session exists, calling resolveCloudAnchorAsync for id=$cloudAnchorId")
-
-        var callbackFired = false
+        Log.d(TAG, "Follower: session exists, calling resolveCloudAnchorAsync for id=$cloudAnchorId")
 
         try {
             session.resolveCloudAnchorAsync(cloudAnchorId) { anchor, state ->
-                callbackFired = true
-                Log.d("CloudAnchorSync", "Follower: resolveCloudAnchorAsync callback — state=$state")
+                Log.d(TAG, "Follower: resolveCloudAnchorAsync callback — state=$state")
                 if (state == Anchor.CloudAnchorState.SUCCESS) {
-                    Log.d("CloudAnchorSync", "Follower: resolution SUCCESS")
-                    onAnchorResolved(anchor)
+                    Log.d(TAG, "Follower: resolution SUCCESS")
+                    mainHandler.post { onAnchorResolved(anchor) }
                 } else {
-                    Log.e("CloudAnchorSync", "Follower: resolution FAILED with state=$state")
-                    onResolveFailed()
-                    onError("Resolution failed: $state")
+                    Log.e(TAG, "Follower: resolution FAILED with state=$state")
+                    mainHandler.post {
+                        onResolveFailed()
+                        onError("Resolution failed: $state")
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.e("CloudAnchorSync", "Follower: exception during resolveCloudAnchorAsync — ${e.message}", e)
+            Log.e(TAG, "Follower: exception during resolveCloudAnchorAsync — ${e.message}", e)
             onResolveFailed()
             onError("Resolution exception: ${e.message}")
         }

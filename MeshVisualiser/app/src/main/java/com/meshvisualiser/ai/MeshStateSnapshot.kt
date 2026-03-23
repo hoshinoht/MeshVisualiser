@@ -37,7 +37,11 @@ data class MeshStateSnapshot(
     val totalRetransmissions: Int = 0,
     val totalDrops: Int = 0
 ) {
-    fun toJson(): String = Gson().toJson(this)
+    companion object {
+        private val gson = Gson()
+    }
+
+    fun toJson(): String = gson.toJson(this)
 
     fun toReadableContext(): String = buildString {
         appendLine("Mesh Network State:")

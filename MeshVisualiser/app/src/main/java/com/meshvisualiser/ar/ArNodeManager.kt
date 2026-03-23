@@ -278,7 +278,7 @@ class ArNodeManager(private val sceneView: ARSceneView) {
         if (!localWorldPosSet) return
         try {
             val count = ghostNodes.size
-            val angle  = count * (2.0 * Math.PI / 6.0)
+            val angle  = count * (2.0 * Math.PI / maxOf(count + 1, 6).toDouble())
             val radius = 0.5f
             val wx = localWorldPosArr[0] + (radius * cos(angle)).toFloat()
             val wy = localWorldPosArr[1]

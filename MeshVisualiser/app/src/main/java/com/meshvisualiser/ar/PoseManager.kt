@@ -14,6 +14,9 @@ class PoseManager(
 
         /** Only broadcast pose if device moved more than this (metres) since last broadcast. */
         private const val MIN_POSE_DELTA_METRES = 0.01f
+
+        /** Send this many times to ensure at least one gets through. */
+        private const val MAX_BROADCASTS = 10
     }
 
     private var sharedAnchor: Anchor? = null
@@ -22,7 +25,6 @@ class PoseManager(
     private var lastY = Float.NaN
     private var lastZ = Float.NaN
     private var broadcastCount = 0
-    private val MAX_BROADCASTS = 10  // send 10 times to ensure at least one gets through
 
 
 

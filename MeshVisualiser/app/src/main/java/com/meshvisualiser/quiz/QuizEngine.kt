@@ -29,7 +29,7 @@ data class QuizState(
 class QuizEngine {
 
     fun generateQuiz(
-        localId: Long,
+        @Suppress("unused") localId: Long,
         peers: Map<String, PeerInfo>,
         leaderId: Long,
         peerRttHistory: Map<Long, List<Long>>

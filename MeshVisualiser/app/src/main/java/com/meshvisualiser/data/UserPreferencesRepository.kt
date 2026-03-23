@@ -56,6 +56,13 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setAiServerUrl(url: String) {
+        require(
+            url.isEmpty() ||
+            url.startsWith("https://") ||
+            url.startsWith("http://localhost") ||
+            url.startsWith("http://10.")
+        ) { "Server URL must use HTTPS (http://localhost and http://10.* allowed for dev)" }
+
         context.dataStore.edit { prefs ->
             prefs[Keys.AI_SERVER_URL] = url
         }
