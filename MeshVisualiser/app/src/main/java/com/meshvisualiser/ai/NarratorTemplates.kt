@@ -38,6 +38,13 @@ object NarratorTemplates {
                 "Applications get notified of this failure and can reconnect or alert the user."
         )
 
+    fun nthTcpRetransmission(peerModel: String, count: Int): NarratorMessage =
+        NarratorMessage(
+            title = "Retransmission #$count",
+            explanation = "Another retry to $peerModel. TCP keeps trying because reliability " +
+                "is its core promise — every byte arrives, in order, or the sender is notified."
+        )
+
     // --- UDP Events ---
 
     fun firstUdpDrop(): NarratorMessage =
@@ -48,6 +55,21 @@ object NarratorTemplates {
                 "but lost packets are simply gone. Video streaming and gaming accept this trade-off."
         )
 
+    fun udpSent(peerModel: String): NarratorMessage =
+        NarratorMessage(
+            title = "UDP Sent",
+            explanation = "Fired and forgot to $peerModel. " +
+                "UDP doesn't wait for confirmation — it's faster but unreliable. " +
+                "If this packet is lost, nobody will know."
+        )
+
+    fun nthUdpDrop(count: Int): NarratorMessage =
+        NarratorMessage(
+            title = "UDP Drop #$count",
+            explanation = "Another packet vanished. UDP has no recovery mechanism — " +
+                "applications must tolerate loss or add their own error correction."
+        )
+
     // --- CSMA/CD Events ---
 
     fun firstCollision(peerCount: Int): NarratorMessage =
@@ -56,6 +78,13 @@ object NarratorTemplates {
             explanation = "Two devices tried to transmit at the same time on the shared medium. " +
                 "With $peerCount peers, collisions are expected. The CSMA/CD protocol detects this " +
                 "and both devices back off for a random time before retrying."
+        )
+
+    fun nthCollision(count: Int): NarratorMessage =
+        NarratorMessage(
+            title = "Collision #$count",
+            explanation = "The shared medium is getting busy. More collisions mean " +
+                "longer backoff waits and lower effective throughput for everyone."
         )
 
     fun backoffStarted(attempt: Int, slots: Int, backoffMs: Long): NarratorMessage =
@@ -85,6 +114,14 @@ object NarratorTemplates {
             explanation = "The Bully Algorithm is selecting a leader from ${peerCount + 1} devices. " +
                 "Each device with a higher ID challenges others — the highest unchallenged ID wins. " +
                 "This is how distributed systems agree on a coordinator without a central server."
+        )
+
+    fun reElectionStarted(peerCount: Int): NarratorMessage =
+        NarratorMessage(
+            title = "Re-election Triggered",
+            explanation = "A topology change (peer joined or left) triggered a new election " +
+                "among ${peerCount + 1} devices. The Bully Algorithm re-runs to find the new " +
+                "highest-ID coordinator."
         )
 
     fun leaderElected(isLocal: Boolean): NarratorMessage =

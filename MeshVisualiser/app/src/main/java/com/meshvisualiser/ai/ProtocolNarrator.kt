@@ -52,6 +52,7 @@ class ProtocolNarrator(
     private var explainedFirstRetransmission = false
     private var explainedFirstUdpDrop = false
     private var explainedFirstCollision = false
+    private var explainedFirstUdpSent = false
     private var explainedElection = false
 
     sealed class ProtocolEvent {
@@ -111,7 +112,9 @@ class ProtocolNarrator(
                 } else if (tcpRetransmissionCount - lastTcpRetransmissionExplained >= RETRANSMISSION_ESCALATION_THRESHOLD) {
                     lastTcpRetransmissionExplained = tcpRetransmissionCount
                     NarratorTemplates.repeatedRetransmissions(tcpRetransmissionCount, event.peerModel)
-                } else null
+                } else {
+                    NarratorTemplates.nthTcpRetransmission(event.peerModel, tcpRetransmissionCount)
+                }
             }
             is ProtocolEvent.TcpDelivered -> {
                 NarratorTemplates.tcpDelivered(event.peerModel, event.rttMs)
@@ -128,9 +131,16 @@ class ProtocolNarrator(
                 } else if (udpDropCount - lastUdpDropExplained >= UDP_DROP_ESCALATION_THRESHOLD) {
                     lastUdpDropExplained = udpDropCount
                     NarratorTemplates.repeatedUdpDrops(udpDropCount)
+                } else {
+                    NarratorTemplates.nthUdpDrop(udpDropCount)
+                }
+            }
+            is ProtocolEvent.UdpSent -> {
+                if (!explainedFirstUdpSent) {
+                    explainedFirstUdpSent = true
+                    NarratorTemplates.udpSent(event.peerModel)
                 } else null
             }
-            is ProtocolEvent.UdpSent -> null
             is ProtocolEvent.CsmaCollision -> {
                 csmaCollisionCount++
                 if (!explainedFirstCollision) {
@@ -140,7 +150,9 @@ class ProtocolNarrator(
                 } else if (csmaCollisionCount - lastCollisionExplained >= COLLISION_ESCALATION_THRESHOLD) {
                     lastCollisionExplained = csmaCollisionCount
                     NarratorTemplates.repeatedCollisions(csmaCollisionCount)
-                } else null
+                } else {
+                    NarratorTemplates.nthCollision(csmaCollisionCount)
+                }
             }
             is ProtocolEvent.CsmaBackoff -> {
                 NarratorTemplates.backoffStarted(event.attempt, event.slots, event.backoffMs)
@@ -152,7 +164,9 @@ class ProtocolNarrator(
                 if (!explainedElection) {
                     explainedElection = true
                     NarratorTemplates.electionStarted(event.peerCount)
-                } else null
+                } else {
+                    NarratorTemplates.reElectionStarted(event.peerCount)
+                }
             }
             is ProtocolEvent.LeaderElected -> {
                 NarratorTemplates.leaderElected(event.isLocal)
@@ -238,6 +252,7 @@ class ProtocolNarrator(
         explainedFirstRetransmission = false
         explainedFirstUdpDrop = false
         explainedFirstCollision = false
+        explainedFirstUdpSent = false
         explainedElection = false
         batchJob?.cancel()
         batchedEvents.clear()

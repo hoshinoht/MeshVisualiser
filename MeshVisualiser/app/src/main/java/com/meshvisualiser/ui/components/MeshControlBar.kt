@@ -16,7 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Quiz
@@ -141,8 +141,8 @@ fun MeshFabMenu(
                     MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Icon(
-                    imageVector = Icons.Default.Lightbulb,
-                    contentDescription = if (narratorEnabled) "Disable Narrator" else "Enable Narrator",
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = if (narratorEnabled) "Disable AI Narrator" else "Enable AI Narrator",
                     tint = if (narratorEnabled)
                         MaterialTheme.colorScheme.onPrimaryContainer
                     else
