@@ -1,6 +1,8 @@
 package com.meshvisualiser.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -70,6 +72,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     }
 
     var showDataSheet by remember { mutableStateOf(false) }
+    var showNetworkSheet by remember { mutableStateOf(false) }
     var showWhatIfSheet by remember { mutableStateOf(false) }
     var showSessionSummary by remember { mutableStateOf(false) }
     var showAiSettings by remember { mutableStateOf(false) }
@@ -102,6 +105,21 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             statusMessage = statusMessage,
             displayName = displayName
         )
+
+        // Leave Session button for stuck ELECTING / RESOLVING states
+        if (meshState == MeshState.ELECTING || meshState == MeshState.RESOLVING) {
+            TextButton(
+                onClick = { viewModel.leaveGroup() },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 32.dp)
+            ) {
+                @Suppress("DEPRECATION")
+                Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Leave Session")
+            }
+        }
 
         // CSMA/CD overlay
         if (transmissionMode == TransmissionMode.CSMA_CD &&
@@ -147,6 +165,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                         onToggleNarrator = { viewModel.toggleNarrator() },
                         onOpenWhatIf = { showWhatIfSheet = true },
                         onOpenDataLogs = { showDataSheet = true },
+                        onOpenNetwork = { showNetworkSheet = true },
                         onOpenSummary = {
                             if (sessionSummary.content == null && !sessionSummary.isLoading) {
                                 viewModel.generateSessionSummary()
@@ -183,7 +202,8 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                 quizState = quizState,
                 onAnswer = { viewModel.answerQuiz(it) },
                 onNext = { viewModel.nextQuestion() },
-                onClose = { viewModel.closeQuiz() }
+                onClose = { viewModel.closeQuiz() },
+                onReplay = { viewModel.startQuiz() }
             )
         }
     }
@@ -202,22 +222,23 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                 showRawLog = showRawLog,
                 onToggleRawLog = { viewModel.toggleRawLog() },
                 showHints = showHints,
-                onToggleHints = { viewModel.toggleHints() },
-                udpDropProbability = udpDropProbability,
-                onDropProbabilityChanged = { viewModel.setUdpDropProbability(it) },
-                tcpDropProbability = tcpDropProbability,
-                onTcpDropProbabilityChanged = { viewModel.setTcpDropProbability(it) },
-                tcpAckTimeoutMs = tcpAckTimeoutMs,
-                onTcpAckTimeoutChanged = { viewModel.setTcpAckTimeoutMs(it) },
-                selectedPeerId = selectedPeerId,
-                peers = peers,
-                transmissionMode = transmissionMode,
-                onModeChanged = { viewModel.setTransmissionMode(it) },
-                onSendTcp = { viewModel.sendTcpData() },
-                onSendUdp = { viewModel.sendUdpData() },
-                isTcpBusy = isTcpBusy
+                onToggleHints = { viewModel.toggleHints() }
             )
         }
+    }
+
+    // Network Conditions sheet
+    if (showNetworkSheet) {
+        NetworkConditionsSheet(
+            udpDropProbability = udpDropProbability,
+            onUdpDropChanged = { viewModel.setUdpDropProbability(it) },
+            tcpDropProbability = tcpDropProbability,
+            onTcpDropChanged = { viewModel.setTcpDropProbability(it) },
+            tcpAckTimeoutMs = tcpAckTimeoutMs,
+            onTcpAckTimeoutChanged = { viewModel.setTcpAckTimeoutMs(it) },
+            isLeader = isLeader,
+            onDismiss = { showNetworkSheet = false }
+        )
     }
 
     // What-If bottom sheet

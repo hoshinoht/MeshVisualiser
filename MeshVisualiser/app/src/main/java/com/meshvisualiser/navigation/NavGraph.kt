@@ -84,6 +84,15 @@ fun MeshNavHost(
         }
 
         composable(Routes.MESH) {
+            // Navigate back to ConnectionScreen when leaveGroup() is called
+            LaunchedEffect(Unit) {
+                viewModel.navigateToConnection.collect {
+                    navController.navigate(Routes.CONNECTION) {
+                        popUpTo(Routes.MESH) { inclusive = true }
+                    }
+                }
+            }
+
             MainScreen(
                 viewModel = viewModel,
                 onNavigateToAr = {

@@ -271,8 +271,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val packetAnimEvents: StateFlow<List<PacketAnimEvent>> = _packetAnimEvents.asStateFlow()
 
     // Navigation event for synchronized mesh start
-    private val _navigateToMesh = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
+    private val _navigateToMesh = MutableSharedFlow<Unit>(replay = 1, extraBufferCapacity = 1)
     val navigateToMesh: SharedFlow<Unit> = _navigateToMesh.asSharedFlow()
+
+    // Navigation event: leaveGroup() → back to ConnectionScreen
+    private val _navigateToConnection = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
+    val navigateToConnection: SharedFlow<Unit> = _navigateToConnection.asSharedFlow()
 
     // ── AI Integration (continued) ──
 
@@ -843,6 +847,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _meshState.value = MeshState.DISCOVERING
         _currentLeaderId.value = -1L
         _isLeader.value = false
+        _navigateToConnection.tryEmit(Unit)
     }
 
     fun retryDiscovery() {
@@ -1070,7 +1075,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         collectorJobs.clear()
 
         // Observe nearby peers
-        collectorJobs += viewModelScope.launch { nearbyManager.peers.collect { peers -> _peers.value = peers } }
+        collectorJobs += viewModelScope.launch {
+            nearbyManager.peers.collect { peers ->
+                _peers.value = peers
+                // Clear stale peer selection
+                val currentSelected = _selectedPeerId.value
+                if (currentSelected != null && peers.values.none { it.peerId == currentSelected }) {
+                    _selectedPeerId.value = null
+                }
+            }
+        }
 
         // Observe mesh state
         collectorJobs += viewModelScope.launch {
