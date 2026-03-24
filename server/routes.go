@@ -4,8 +4,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
+	"unicode"
 )
+
+func isValidRoomCode(code string) bool {
+	if len(code) == 0 || len(code) > 32 {
+		return false
+	}
+	for _, c := range code {
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && c != '-' && c != '_' {
+			return false
+		}
+	}
+	return true
+}
 
 func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 	// Health check
@@ -26,6 +38,10 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 	// Get full room state
 	mux.HandleFunc("GET /rooms/{code}", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
 		room, ok := store.Get(code)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
@@ -37,7 +53,14 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 	// Delete a room
 	mux.HandleFunc("DELETE /rooms/{code}", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
-		store.Delete(code)
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
+		if !store.Delete(code) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 	})
 
@@ -45,6 +68,10 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 
 	mux.HandleFunc("GET /rooms/{code}/anchor", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
 		room, ok := store.Get(code)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
@@ -55,6 +82,11 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 
 	mux.HandleFunc("PUT /rooms/{code}/anchor", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var body struct {
 			AnchorID string `json:"anchor_id"`
 		}
@@ -62,11 +94,16 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "anchor_id required"})
 			return
 		}
-		room := store.GetOrCreate(code)
-		store.mu.Lock()
-		room.AnchorID = body.AnchorID
-		room.UpdatedAt = time.Now()
-		store.mu.Unlock()
+		// Ensure room exists (create if needed)
+		if _, err := store.GetOrCreate(code); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
+		room, ok := store.SetAnchor(code, body.AnchorID)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"anchor_id": room.AnchorID})
 	})
 
@@ -74,6 +111,10 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 
 	mux.HandleFunc("GET /rooms/{code}/leader", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
 		room, ok := store.Get(code)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
@@ -84,6 +125,11 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 
 	mux.HandleFunc("PUT /rooms/{code}/leader", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var body struct {
 			LeaderID string `json:"leader_id"`
 		}
@@ -91,11 +137,16 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "leader_id required"})
 			return
 		}
-		room := store.GetOrCreate(code)
-		store.mu.Lock()
-		room.LeaderID = body.LeaderID
-		room.UpdatedAt = time.Now()
-		store.mu.Unlock()
+		// Ensure room exists (create if needed)
+		if _, err := store.GetOrCreate(code); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
+		room, ok := store.SetLeader(code, body.LeaderID)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"leader_id": room.LeaderID})
 	})
 
@@ -103,6 +154,10 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 
 	mux.HandleFunc("GET /rooms/{code}/conditions", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
 		room, ok := store.Get(code)
 		if !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
@@ -113,6 +168,11 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 
 	mux.HandleFunc("PUT /rooms/{code}/conditions", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var cond NetworkConditions
 		if err := json.NewDecoder(r.Body).Decode(&cond); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -135,11 +195,19 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 		if cond.JitterMs < 0 {
 			cond.JitterMs = 0
 		}
-		room := store.GetOrCreate(code)
-		store.mu.Lock()
-		room.Conditions = cond
-		room.UpdatedAt = time.Now()
-		store.mu.Unlock()
+		if cond.BandwidthKbps < 0 {
+			cond.BandwidthKbps = 0
+		}
+		// Ensure room exists (create if needed)
+		if _, err := store.GetOrCreate(code); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
+		room, ok := store.SetConditions(code, cond)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
+			return
+		}
 		writeJSON(w, http.StatusOK, room.Conditions)
 	})
 }

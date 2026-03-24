@@ -94,6 +94,7 @@ test-results/
 
 # Go
 server/mesh-server
+server/server
 
 # Environment files
 .env

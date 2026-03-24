@@ -33,7 +33,7 @@ func NewSummaryCache(ttl time.Duration) *SummaryCache {
 func (c *SummaryCache) key(req SummaryRequest) string {
 	h := sha256.New()
 	h.Write([]byte(req.MeshState))
-	if req.QuizScore != nil {
+	if req.QuizScore != nil && req.QuizTotal != nil {
 		fmt.Fprintf(h, "|%d/%d", *req.QuizScore, *req.QuizTotal)
 	}
 	return hex.EncodeToString(h.Sum(nil))

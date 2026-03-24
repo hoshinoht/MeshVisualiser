@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -35,6 +36,8 @@ var presets = map[string]NetworkConditions{
 	"congested": {LatencyMs: 500, JitterMs: 200, PacketLossPct: 15, BandwidthKbps: 128, ConditionPreset: "congested"},
 }
 
+const maxRooms = 500
+
 // Store is the in-memory room store.
 type Store struct {
 	mu    sync.RWMutex
@@ -45,11 +48,14 @@ func NewStore() *Store {
 	return &Store{rooms: make(map[string]*Room)}
 }
 
-func (s *Store) GetOrCreate(code string) *Room {
+func (s *Store) GetOrCreate(code string) (Room, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r, ok := s.rooms[code]; ok {
-		return r
+		return *r, nil
+	}
+	if len(s.rooms) >= maxRooms {
+		return Room{}, fmt.Errorf("room limit reached (%d)", maxRooms)
 	}
 	r := &Room{
 		Code:       code,
@@ -58,30 +64,72 @@ func (s *Store) GetOrCreate(code string) *Room {
 		UpdatedAt:  time.Now(),
 	}
 	s.rooms[code] = r
-	return r
+	return *r, nil
 }
 
-func (s *Store) Get(code string) (*Room, bool) {
+func (s *Store) Get(code string) (Room, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	r, ok := s.rooms[code]
-	return r, ok
+	if r, ok := s.rooms[code]; ok {
+		return *r, true
+	}
+	return Room{}, false
 }
 
-func (s *Store) Delete(code string) {
+func (s *Store) Delete(code string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, ok := s.rooms[code]; !ok {
+		return false
+	}
 	delete(s.rooms, code)
+	return true
 }
 
-func (s *Store) ListAll() []*Room {
+func (s *Store) ListAll() []Room {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	rooms := make([]*Room, 0, len(s.rooms))
+	out := make([]Room, 0, len(s.rooms))
 	for _, r := range s.rooms {
-		rooms = append(rooms, r)
+		out = append(out, *r)
 	}
-	return rooms
+	return out
+}
+
+func (s *Store) SetAnchor(code, anchorID string) (Room, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.rooms[code]
+	if !ok {
+		return Room{}, false
+	}
+	r.AnchorID = anchorID
+	r.UpdatedAt = time.Now()
+	return *r, true
+}
+
+func (s *Store) SetLeader(code, leaderID string) (Room, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.rooms[code]
+	if !ok {
+		return Room{}, false
+	}
+	r.LeaderID = leaderID
+	r.UpdatedAt = time.Now()
+	return *r, true
+}
+
+func (s *Store) SetConditions(code string, cond NetworkConditions) (Room, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.rooms[code]
+	if !ok {
+		return Room{}, false
+	}
+	r.Conditions = cond
+	r.UpdatedAt = time.Now()
+	return *r, true
 }
 
 // Cleanup expired rooms (older than ttl).

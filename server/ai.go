@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 )
 
 // System prompts.
@@ -80,6 +82,59 @@ type SummaryResponse struct {
 	Summary string `json:"summary"`
 }
 
+// isPrivateIP returns true if the IP is in a private/reserved range (RFC1918, link-local, loopback).
+func isPrivateIP(ip net.IP) bool {
+	privateRanges := []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"127.0.0.0/8",
+		"169.254.0.0/16",
+		"::1/128",
+		"fc00::/7",
+		"fe80::/10",
+	}
+	for _, cidr := range privateRanges {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateLLMBaseURL checks that the URL has http/https scheme and does not point to a private IP.
+func validateLLMBaseURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("URL scheme must be http or https, got %q", u.Scheme)
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	if ip != nil && isPrivateIP(ip) {
+		return fmt.Errorf("private/reserved IP addresses are not allowed")
+	}
+	// If it's a hostname, resolve and check all IPs
+	if ip == nil {
+		addrs, err := net.LookupIP(host)
+		if err != nil {
+			return fmt.Errorf("cannot resolve host %q: %w", host, err)
+		}
+		for _, addr := range addrs {
+			if isPrivateIP(addr) {
+				return fmt.Errorf("host %q resolves to private IP %s", host, addr)
+			}
+		}
+	}
+	return nil
+}
+
 // Route registration.
 
 func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryCache) {
@@ -101,6 +156,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// PUT /ai/config
 	mux.HandleFunc("PUT /ai/config", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var body struct {
 			BaseURL string `json:"llm_base_url"`
 			Model   string `json:"llm_model"`
@@ -110,6 +166,12 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 			return
 		}
+		if body.BaseURL != "" {
+			if err := validateLLMBaseURL(body.BaseURL); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid base URL: %v", err)})
+				return
+			}
+		}
 		cfg.Update(body.BaseURL, body.Model, body.APIKey)
 		log.Printf("LLM config updated: base_url=%s model=%s has_key=%v", body.BaseURL, body.Model, body.APIKey != "")
 		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
@@ -117,6 +179,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/narrate
 	mux.HandleFunc("POST /ai/narrate", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req NarrateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -153,6 +216,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/what-if
 	mux.HandleFunc("POST /ai/what-if", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req WhatIfRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -188,6 +252,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/summary (cached)
 	mux.HandleFunc("POST /ai/summary", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req SummaryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})

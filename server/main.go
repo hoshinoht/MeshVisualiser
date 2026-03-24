@@ -25,15 +25,24 @@ func main() {
 	registerRoomRoutes(mux, store)
 	registerAIRoutes(mux, llmCfg, summaryCache)
 
-	// Middleware chain: cors → apiKey → log → mux
+	// Middleware chain: cors → security headers → apiKey → log → mux
 	var handler http.Handler = logMiddleware(mux)
 	if apiKey := os.Getenv("MESH_API_KEY"); apiKey != "" {
 		log.Println("API key authentication enabled")
 		handler = apiKeyMiddleware(apiKey, handler)
 	}
+	handler = securityHeadersMiddleware(handler)
 	handler = corsMiddleware(handler)
 
 	addr := ":8080"
 	log.Printf("Mesh server starting on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, handler))
+
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      handler,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }

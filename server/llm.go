@@ -51,7 +51,9 @@ func (c *LLMConfig) Update(baseURL, model, apiKey string) {
 	if model != "" {
 		c.Model = model
 	}
-	c.APIKey = apiKey
+	if apiKey != "" {
+		c.APIKey = apiKey
+	}
 }
 
 // OpenAI-compatible chat completion types.
@@ -87,7 +89,10 @@ func callLLM(cfg *LLMConfig, messages []chatMessage, maxTokens int) (string, err
 		MaxTokens:   maxTokens,
 		Temperature: 0.7,
 	}
-	payload, _ := json.Marshal(body)
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
 
 	req, err := http.NewRequest("POST", baseURL+"/v1/chat/completions", bytes.NewReader(payload))
 	if err != nil {
@@ -104,7 +109,7 @@ func callLLM(cfg *LLMConfig, messages []chatMessage, maxTokens int) (string, err
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", fmt.Errorf("read response: %w", err)
 	}
