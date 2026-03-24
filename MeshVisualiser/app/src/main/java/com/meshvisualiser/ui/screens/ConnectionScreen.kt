@@ -1,5 +1,8 @@
 package com.meshvisualiser.ui.screens
 
+import android.bluetooth.BluetoothAdapter
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -21,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.PeerInfo
@@ -53,6 +57,7 @@ fun ConnectionScreen(
     discoveryTimeoutReached: Boolean = false,
     onRetryDiscovery: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val validPeerCount = peers.values.count { it.hasValidPeerId }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -125,7 +130,11 @@ fun ConnectionScreen(
                         placeholder = { Text("e.g. GROUP-A") },
                         singleLine = true,
                         isError = groupCodeError != null,
-                        supportingText = groupCodeError?.let { { Text(it) } },
+                        supportingText = if (groupCodeError != null) {
+                            { Text(groupCodeError) }
+                        } else {
+                            { Text("Enter any code — all devices must use the same one") }
+                        },
                         enabled = connectionState == ConnectionFlowState.IDLE,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -206,7 +215,24 @@ fun ConnectionScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 HardwareChecklist(
                                     issues = hardwareIssues,
-                                    onEnableAction = onEnableHardware
+                                    onEnableAction = { type ->
+                                        when (type) {
+                                            HardwareType.BLUETOOTH -> {
+                                                val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                                                try {
+                                                    context.startActivity(intent)
+                                                } catch (_: Exception) {
+                                                    context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                                                }
+                                            }
+                                            HardwareType.WIFI -> {
+                                                context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                                            }
+                                            HardwareType.LOCATION -> {
+                                                context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                                            }
+                                        }
+                                    }
                                 )
                             }
 
@@ -249,7 +275,7 @@ fun ConnectionScreen(
                                             ListItem(
                                                 headlineContent = {
                                                     Text(
-                                                        text = peer.deviceModel.ifEmpty { "Unknown" },
+                                                        text = peer.displayName.ifEmpty { peer.deviceModel }.ifEmpty { "Unknown" },
                                                         style = MaterialTheme.typography.bodyMedium
                                                     )
                                                 },

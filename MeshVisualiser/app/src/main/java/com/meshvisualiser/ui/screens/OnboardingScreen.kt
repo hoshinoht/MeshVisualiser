@@ -1,6 +1,9 @@
 package com.meshvisualiser.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -39,9 +42,12 @@ fun OnboardingScreen(
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 3 })
 
+    val activity = context as androidx.activity.ComponentActivity
+
     var permissionDenied by remember { mutableStateOf(false) }
+    var permanentlyDenied by remember { mutableStateOf(false) }
     var allGranted by remember {
-        mutableStateOf(PermissionHelper.hasAllPermissions(context as androidx.activity.ComponentActivity))
+        mutableStateOf(PermissionHelper.hasAllPermissions(activity))
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -53,6 +59,11 @@ fun OnboardingScreen(
             onComplete()
         } else {
             permissionDenied = true
+            // Check if any denied permission was permanently denied ("Don't ask again")
+            val deniedPerms = permissions.filter { !it.value }.keys
+            permanentlyDenied = deniedPerms.any { perm ->
+                !activity.shouldShowRequestPermissionRationale(perm)
+            }
         }
     }
 
@@ -86,9 +97,17 @@ fun OnboardingScreen(
                 )
                 2 -> PermissionsPage(
                     permissionDenied = permissionDenied,
+                    permanentlyDenied = permanentlyDenied,
                     onRequestPermissions = {
                         permissionDenied = false
+                        permanentlyDenied = false
                         permissionLauncher.launch(PermissionHelper.getRequiredPermissions())
+                    },
+                    onOpenSettings = {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
                     }
                 )
             }
@@ -163,15 +182,27 @@ fun OnboardingScreen(
                     onClick = {
                         if (allGranted) {
                             onComplete()
+                        } else if (permanentlyDenied) {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", context.packageName, null)
+                            }
+                            context.startActivity(intent)
                         } else {
                             permissionDenied = false
+                            permanentlyDenied = false
                             permissionLauncher.launch(PermissionHelper.getRequiredPermissions())
                         }
                     },
                     shape = MaterialTheme.shapes.medium,
                     contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
                 ) {
-                    Text(if (allGranted) "Get Started" else "Grant Permissions")
+                    Text(
+                        when {
+                            allGranted -> "Get Started"
+                            permanentlyDenied -> "Open App Settings"
+                            else -> "Grant Permissions"
+                        }
+                    )
                 }
             }
         }
@@ -237,7 +268,9 @@ private data class PermissionItem(
 @Composable
 private fun PermissionsPage(
     permissionDenied: Boolean,
-    onRequestPermissions: () -> Unit
+    permanentlyDenied: Boolean,
+    onRequestPermissions: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val permissions = remember { buildList {
         add(
@@ -349,14 +382,23 @@ private fun PermissionsPage(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Some permissions were denied. The app needs these to work.",
+                                text = if (permanentlyDenied)
+                                    "Some permissions were permanently denied. Please grant them in app settings."
+                                else
+                                    "Some permissions were denied. The app needs these to work.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 textAlign = TextAlign.Center
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedButton(onClick = onRequestPermissions) {
-                                Text("Try Again")
+                            if (permanentlyDenied) {
+                                Button(onClick = onOpenSettings) {
+                                    Text("Open App Settings")
+                                }
+                            } else {
+                                OutlinedButton(onClick = onRequestPermissions) {
+                                    Text("Try Again")
+                                }
                             }
                         }
                     }

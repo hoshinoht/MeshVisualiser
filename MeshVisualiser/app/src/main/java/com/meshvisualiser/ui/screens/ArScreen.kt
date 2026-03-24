@@ -432,6 +432,8 @@ fun ArScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    var arSessionError by remember { mutableStateOf<String?>(null) }
+
     val peers by viewModel.peers.collectAsStateWithLifecycle()
     val selectedPeerId by viewModel.selectedPeerId.collectAsStateWithLifecycle()
     val packetEvents by viewModel.packetAnimEvents.collectAsStateWithLifecycle()
@@ -632,7 +634,10 @@ fun ArScreen(
                                 getPeers = { currentPeers }
                             )
                         },
-                        onSessionFailed = { e -> Log.e(TAG, "Session failed: ${e.message}") }
+                        onSessionFailed = { e ->
+                            Log.e(TAG, "Session failed: ${e.message}")
+                            arSessionError = e.message ?: "AR session failed"
+                        }
                     ).also { sv ->
                         sceneViewRef[0] = sv
 
@@ -749,6 +754,42 @@ fun ArScreen(
                 viewModel.onCloudAnchorResolved()
             }
         )
+
+        // AR session error overlay
+        if (arSessionError != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                ElevatedCard(
+                    shape = MaterialTheme.shapes.extraLarge,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text(
+                            text = "AR Session Failed",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = arSessionError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Button(onClick = onBack) {
+                            Text("Go Back")
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
