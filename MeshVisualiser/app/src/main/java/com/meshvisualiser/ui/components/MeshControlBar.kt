@@ -2,6 +2,7 @@ package com.meshvisualiser.ui.components
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
@@ -51,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.PeerInfo
 import com.meshvisualiser.models.TransmissionMode
@@ -64,7 +68,7 @@ import com.meshvisualiser.ui.theme.StatusLeader
  * Layout (bottom-to-top, end-aligned):
  *  - [Leader AssistChip] if isLeader
  *  - Row of 3 always-visible SmallFABs (AR, Quiz, Narrator)
- *  - FloatingActionButtonMenu with ToggleFloatingActionButton + 4 expandable items
+ *  - FloatingActionButtonMenu with ToggleFloatingActionButton + 5 expandable items
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +80,7 @@ fun MeshFabMenu(
     onToggleNarrator: () -> Unit,
     onOpenWhatIf: () -> Unit,
     onOpenDataLogs: () -> Unit,
+    onOpenNetwork: () -> Unit,
     onOpenSummary: () -> Unit,
     onOpenAiSettings: () -> Unit,
     modifier: Modifier = Modifier
@@ -111,43 +116,49 @@ fun MeshFabMenu(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            SmallFloatingActionButton(
-                onClick = onNavigateToAr,
-                containerColor = MaterialTheme.colorScheme.secondaryContainer
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ViewInAr,
-                    contentDescription = "Open AR View",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                SmallFloatingActionButton(
+                    onClick = onNavigateToAr,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ViewInAr,
+                        contentDescription = "Open AR View",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
             }
 
-            SmallFloatingActionButton(
-                onClick = onStartQuiz,
-                containerColor = MaterialTheme.colorScheme.secondaryContainer
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Quiz,
-                    contentDescription = "Start Quiz",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                SmallFloatingActionButton(
+                    onClick = onStartQuiz,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Quiz,
+                        contentDescription = "Start Quiz",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
             }
 
-            SmallFloatingActionButton(
-                onClick = onToggleNarrator,
-                containerColor = if (narratorEnabled)
-                    MaterialTheme.colorScheme.primaryContainer
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = if (narratorEnabled) "Disable AI Narrator" else "Enable AI Narrator",
-                    tint = if (narratorEnabled)
-                        MaterialTheme.colorScheme.onPrimaryContainer
+            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                SmallFloatingActionButton(
+                    onClick = onToggleNarrator,
+                    containerColor = if (narratorEnabled)
+                        MaterialTheme.colorScheme.primaryContainer
                     else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = if (narratorEnabled) "Disable AI Narrator" else "Enable AI Narrator",
+                        tint = if (narratorEnabled)
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -193,6 +204,14 @@ fun MeshFabMenu(
                 },
                 icon = { Icon(Icons.Default.Code, contentDescription = null) },
                 text = { Text("Data Logs") }
+            )
+            FloatingActionButtonMenuItem(
+                onClick = {
+                    menuExpanded = false
+                    onOpenNetwork()
+                },
+                icon = { Icon(Icons.Default.NetworkCheck, contentDescription = null) },
+                text = { Text("Network") }
             )
             FloatingActionButtonMenuItem(
                 onClick = {
@@ -254,6 +273,11 @@ fun MeshControlBar(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // --- Peer selector row ---
+            Text(
+                text = "1. Send to",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             if (peers.isEmpty()) {
                 Text(
                     text = "Waiting for peers...",
@@ -288,11 +312,25 @@ fun MeshControlBar(
                         )
                     }
                 }
+                if (selectedPeerId == null) {
+                    Text(
+                        text = "Tap a peer to select them as the target",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // --- Mode toggle + Send buttons ---
+            Text(
+                text = "2. Send as",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (selectedPeerId != null) 1f else 0.38f),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -327,6 +365,14 @@ fun MeshControlBar(
                             if (isTcpBusy) {
                                 LoadingIndicator(modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = LogTcp
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
                             }
                             Text(
                                 text = "TCP",
@@ -344,6 +390,13 @@ fun MeshControlBar(
                             ),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                         ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = LogUdp
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "UDP",
                                 color = LogUdp,

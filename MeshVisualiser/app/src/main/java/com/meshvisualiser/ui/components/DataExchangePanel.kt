@@ -34,8 +34,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.meshvisualiser.models.PeerInfo
-import com.meshvisualiser.models.TransmissionMode
 import com.meshvisualiser.ui.DataLogEntry
 import com.meshvisualiser.ui.TransferEvent
 import com.meshvisualiser.ui.TransferStatus
@@ -59,19 +57,6 @@ fun DataExchangePanel(
     onToggleRawLog: () -> Unit,
     showHints: Boolean,
     onToggleHints: () -> Unit,
-    udpDropProbability: Float,
-    onDropProbabilityChanged: (Float) -> Unit,
-    tcpDropProbability: Float,
-    onTcpDropProbabilityChanged: (Float) -> Unit,
-    tcpAckTimeoutMs: Long,
-    onTcpAckTimeoutChanged: (Long) -> Unit,
-    selectedPeerId: Long?,
-    peers: Map<String, PeerInfo>,
-    transmissionMode: TransmissionMode,
-    onModeChanged: (TransmissionMode) -> Unit,
-    onSendTcp: () -> Unit,
-    onSendUdp: () -> Unit,
-    isTcpBusy: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -91,155 +76,12 @@ fun DataExchangePanel(
     }
 
     Column(modifier = modifier.padding(12.dp)) {
-        // Mode toggle
-        ModeSegmentedButton(
-            selectedMode = transmissionMode,
-            onModeSelected = onModeChanged,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+        Text(
+            text = "Data Exchange",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(bottom = 8.dp)
         )
-
-        // Send buttons
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "Data Exchange",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            FilledTonalButton(
-                onClick = onSendTcp,
-                enabled = selectedPeerId != null && !isTcpBusy,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = LogTcp.copy(alpha = 0.3f)
-                ),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("Send TCP", color = LogTcp, style = MaterialTheme.typography.labelSmall)
-            }
-            FilledTonalButton(
-                onClick = onSendUdp,
-                enabled = selectedPeerId != null,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = LogUdp.copy(alpha = 0.3f)
-                ),
-                shape = MaterialTheme.shapes.small,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("Send UDP", color = LogUdp, style = MaterialTheme.typography.labelSmall)
-            }
-        }
-
-        if (selectedPeerId == null) {
-            Text(
-                text = "Select a peer above to send data",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-        }
-
-        // UDP packet loss slider
-        Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "UDP Packet Loss",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "${(udpDropProbability * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LogUdp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Slider(
-                value = udpDropProbability,
-                onValueChange = onDropProbabilityChanged,
-                valueRange = 0f..1f,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = LogUdp,
-                    activeTrackColor = LogUdp,
-                    inactiveTrackColor = LogUdp.copy(alpha = 0.2f)
-                )
-            )
-        }
-
-        // TCP packet loss slider (blue)
-        Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "TCP Packet Loss",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "${(tcpDropProbability * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LogTcp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Slider(
-                value = tcpDropProbability,
-                onValueChange = onTcpDropProbabilityChanged,
-                valueRange = 0f..1f,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = LogTcp,
-                    activeTrackColor = LogTcp,
-                    inactiveTrackColor = LogTcp.copy(alpha = 0.2f)
-                )
-            )
-        }
-
-        // TCP ACK timeout slider (gray)
-        Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "TCP ACK Timeout",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "${tcpAckTimeoutMs}ms",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Slider(
-                value = tcpAckTimeoutMs.toFloat(),
-                onValueChange = { onTcpAckTimeoutChanged(it.toLong()) },
-                valueRange = 3000f..10000f,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.outline,
-                    activeTrackColor = MaterialTheme.colorScheme.outline,
-                    inactiveTrackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                )
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
 
         // Log area
         if (showRawLog) {

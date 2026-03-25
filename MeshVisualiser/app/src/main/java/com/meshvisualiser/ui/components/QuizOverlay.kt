@@ -7,6 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +32,7 @@ fun QuizOverlay(
     onAnswer: (Int) -> Unit,
     onNext: () -> Unit,
     onClose: () -> Unit,
+    onReplay: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -50,7 +54,7 @@ fun QuizOverlay(
         ) {
             if (quizState.isFinished) {
                 // Final score screen
-                FinalScoreScreen(quizState, onClose)
+                FinalScoreScreen(quizState, onClose, onReplay)
             } else {
                 quizState.currentQuestion?.let { question ->
                     QuestionScreen(
@@ -95,13 +99,46 @@ private fun QuestionScreen(
         label = "timerPulse"
     )
 
+    var showExitConfirm by remember { mutableStateOf(false) }
+
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            title = { Text("Quit quiz?") },
+            text = { Text("Your progress will be lost.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExitConfirm = false
+                    onClose()
+                }) {
+                    Text("Quit")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showExitConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Column(modifier = Modifier.padding(20.dp)) {
-        // Header: progress + score + timer
+        // Header: close + progress + score + timer
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = { showExitConfirm = true }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Quit quiz",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Text(
                 text = "Q${questionIndex + 1}/$totalQuestions",
                 style = MaterialTheme.typography.titleMedium,
@@ -201,8 +238,25 @@ private fun QuestionScreen(
                     Text(
                         text = option,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
                     )
+                    if (isRevealed) {
+                        when {
+                            isCorrect -> Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Correct answer",
+                                tint = LogAck,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            isSelected -> Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Wrong answer",
+                                tint = LogError,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -222,7 +276,7 @@ private fun QuestionScreen(
 }
 
 @Composable
-private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit) {
+private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit, onReplay: () -> Unit) {
     Column(
         modifier = Modifier.padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -269,8 +323,13 @@ private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        Button(onClick = onClose) {
-            Text("Close")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onReplay) {
+                Text("Try Again")
+            }
+            Button(onClick = onClose) {
+                Text("Close")
+            }
         }
     }
 }

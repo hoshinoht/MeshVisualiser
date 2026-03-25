@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -157,7 +158,18 @@ fun SessionSummarySheet(
                         }
                     }
                 }
-                summaryContent != null -> {
+                summaryContent == null -> {
+                    Text(
+                        text = "AI will summarize the messages, transfers, and quiz results from this session.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                    Button(onClick = onRegenerate) {
+                        Text("Generate Summary")
+                    }
+                }
+                else -> {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()

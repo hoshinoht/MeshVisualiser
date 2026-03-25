@@ -39,6 +39,15 @@ fun CsmacdOverlay(
         label = "csmaColor"
     )
 
+    val stateLabel = when (csmaState.currentState) {
+        CsmaState.IDLE -> "Channel idle"
+        CsmaState.SENSING -> "Sensing channel..."
+        CsmaState.TRANSMITTING -> "Transmitting"
+        CsmaState.COLLISION -> "Collision detected!"
+        CsmaState.BACKOFF -> "Backing off (random wait)"
+        CsmaState.SUCCESS -> "Transmitted successfully"
+    }
+
     GlassSurface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp),
         shape = MaterialTheme.shapes.small
@@ -68,7 +77,7 @@ fun CsmacdOverlay(
                     shape = MaterialTheme.shapes.extraSmall
                 ) {
                     Text(
-                        text = csmaState.currentState.name,
+                        text = stateLabel,
                         style = MaterialTheme.typography.labelLarge,
                         color = stateColor,
                         fontWeight = FontWeight.Bold,
