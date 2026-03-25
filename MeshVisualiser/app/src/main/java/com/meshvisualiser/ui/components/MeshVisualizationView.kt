@@ -440,10 +440,10 @@ fun MeshVisualizationView(
 
                 // Dashed line
                 drawLine(
-                    color = outlineColor.copy(alpha = currentEdgeAlpha * 0.20f),
+                    color = outlineColor.copy(alpha = currentEdgeAlpha * 0.40f),
                     start = posA,
                     end = posB,
-                    strokeWidth = 1.5f,
+                    strokeWidth = 2f,
                     cap = StrokeCap.Round,
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
                 )

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.fillMaxSize
 import com.meshvisualiser.ai.NarratorTemplates.NarratorMessage
 import kotlinx.coroutines.delay
 
@@ -68,15 +69,17 @@ fun NarratorOverlay(
         // Overflow badge — only visible when there are hidden older messages
         if (overflowCount > 0) {
             Box(modifier = Modifier.align(Alignment.End)) {
-                AssistChip(
-                    onClick = {},
-                    label = {
-                        Text(
-                            text = "+$overflowCount more",
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        text = "+$overflowCount more",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -114,12 +117,14 @@ private fun NarratorCard(
 
     var isDismissed by remember { mutableStateOf(false) }
 
-    // 8-second auto-dismiss — guarded to prevent double-dismiss
-    LaunchedEffect(message.title, message.explanation) {
-        delay(8_000L)
-        if (!isDismissed) {
-            isDismissed = true
-            onDismiss()
+    // 8-second auto-dismiss — pauses while expanded, restarts when collapsed
+    LaunchedEffect(message.title, message.explanation, expanded) {
+        if (!expanded) {
+            delay(8_000L)
+            if (!isDismissed) {
+                isDismissed = true
+                onDismiss()
+            }
         }
     }
 
@@ -138,7 +143,20 @@ private fun NarratorCard(
     // SwipeToDismissBox: horizontal swipe (either direction) dismisses the card
     SwipeToDismissBox(
         state = dismissState,
-        backgroundContent = {},   // no visible background swipe indicator needed
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Dismiss",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        },
         enableDismissFromStartToEnd = true,
         enableDismissFromEndToStart = true,
         modifier = Modifier.fillMaxWidth()
@@ -159,7 +177,7 @@ private fun NarratorCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
+                        contentDescription = "AI Narrator",
                         modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )

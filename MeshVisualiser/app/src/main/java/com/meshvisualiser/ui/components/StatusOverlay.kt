@@ -2,6 +2,11 @@ package com.meshvisualiser.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.HowToVote
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.runtime.Composable
@@ -54,11 +59,28 @@ fun StatusOverlay(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = statusMessage,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = stateColor
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val stateIcon = when (meshState) {
+                        MeshState.DISCOVERING -> Icons.Default.Bluetooth
+                        MeshState.ELECTING -> Icons.Default.HowToVote
+                        MeshState.RESOLVING -> Icons.Default.Sync
+                        MeshState.CONNECTED -> Icons.Default.Check
+                    }
+                    Icon(
+                        imageVector = stateIcon,
+                        contentDescription = meshState.name,
+                        tint = stateColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = statusMessage,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = stateColor
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
