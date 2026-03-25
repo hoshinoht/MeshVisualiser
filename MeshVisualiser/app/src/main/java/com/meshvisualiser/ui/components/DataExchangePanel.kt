@@ -92,8 +92,8 @@ fun DataExchangePanel(
                     .fillMaxWidth()
                     .heightIn(max = 480.dp)
                     .clip(MaterialTheme.shapes.extraSmall)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                    .padding(4.dp)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                    .padding(6.dp)
             ) {
                 if (dataLogs.isEmpty()) {
                     item {

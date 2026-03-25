@@ -68,7 +68,7 @@ import com.meshvisualiser.ui.theme.StatusLeader
  * Layout (bottom-to-top, end-aligned):
  *  - [Leader AssistChip] if isLeader
  *  - Row of 3 always-visible SmallFABs (AR, Quiz, Narrator)
- *  - FloatingActionButtonMenu with ToggleFloatingActionButton + 5 expandable items
+ *  - FloatingActionButtonMenu with ToggleFloatingActionButton + 4 expandable items
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -82,7 +82,6 @@ fun MeshFabMenu(
     onOpenDataLogs: () -> Unit,
     onOpenNetwork: () -> Unit,
     onOpenSummary: () -> Unit,
-    onOpenAiSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -220,14 +219,6 @@ fun MeshFabMenu(
                 },
                 icon = { Icon(Icons.Default.Summarize, contentDescription = null) },
                 text = { Text("Summary") }
-            )
-            FloatingActionButtonMenuItem(
-                onClick = {
-                    menuExpanded = false
-                    onOpenAiSettings()
-                },
-                icon = { Icon(Icons.Default.SmartToy, contentDescription = null) },
-                text = { Text("AI Config") }
             )
         }
     }

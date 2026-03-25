@@ -91,8 +91,7 @@ fun CsmacdOverlay(
             Text(
                 text = csmaState.currentStep,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             if (csmaState.collisionCount > 0) {

@@ -10,7 +10,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.SnackbarResult
 import com.meshvisualiser.models.MeshState
 import com.meshvisualiser.models.TransmissionMode
 import com.meshvisualiser.simulation.CsmaState
@@ -50,9 +52,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     val whatIfExchanges by viewModel.whatIfExchanges.collectAsStateWithLifecycle()
     val whatIfLoading by viewModel.whatIfLoading.collectAsStateWithLifecycle()
     val sessionSummary by viewModel.sessionSummary.collectAsStateWithLifecycle()
-    val aiTestState by viewModel.aiTestState.collectAsStateWithLifecycle()
-    val llmBaseUrl by viewModel.llmBaseUrl.collectAsStateWithLifecycle()
-    val llmModel by viewModel.llmModel.collectAsStateWithLifecycle()
 
     val mainSnackbarHostState = remember { SnackbarHostState() }
 
@@ -75,7 +74,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     var showNetworkSheet by remember { mutableStateOf(false) }
     var showWhatIfSheet by remember { mutableStateOf(false) }
     var showSessionSummary by remember { mutableStateOf(false) }
-    var showAiSettings by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Auto-select peer when only one valid peer exists
@@ -83,6 +81,20 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     LaunchedEffect(validPeers.size, selectedPeerId) {
         if (validPeers.size == 1 && selectedPeerId == null) {
             viewModel.selectPeer(validPeers.first().peerId)
+        }
+    }
+
+    // Notify user when background summary generation completes
+    LaunchedEffect(sessionSummary.content, sessionSummary.error) {
+        if (!showSessionSummary && sessionSummary.content != null) {
+            val result = mainSnackbarHostState.showSnackbar(
+                message = "Summary ready",
+                actionLabel = "View",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                showSessionSummary = true
+            }
         }
     }
 
@@ -132,17 +144,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             )
         }
 
-        // Narrator overlay
-        if (narratorEnabled && narratorMessages.isNotEmpty()) {
-            NarratorOverlay(
-                messages = narratorMessages,
-                onDismiss = { viewModel.dismissNarratorMessage(it) },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 280.dp)
-            )
-        }
-
         // Bottom: FAB menu + persistent control bar
         if (meshState == MeshState.RESOLVING || meshState == MeshState.CONNECTED) {
             Column(
@@ -167,12 +168,23 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                         onOpenDataLogs = { showDataSheet = true },
                         onOpenNetwork = { showNetworkSheet = true },
                         onOpenSummary = {
-                            if (sessionSummary.content == null && !sessionSummary.isLoading) {
+                            if (sessionSummary.content != null) {
+                                // Already generated — just show it
+                                showSessionSummary = true
+                            } else if (!sessionSummary.isLoading) {
+                                // Fire the generation and let the user continue
                                 viewModel.generateSessionSummary()
+                                snackbarScope.launch {
+                                    mainSnackbarHostState.showSnackbar(
+                                        "Generating summary in background...",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            } else {
+                                // Already loading — just show the sheet with progress
+                                showSessionSummary = true
                             }
-                            showSessionSummary = true
-                        },
-                        onOpenAiSettings = { showAiSettings = true }
+                        }
                     )
                 }
 
@@ -188,6 +200,18 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                     isTcpBusy = isTcpBusy
                 )
             }
+        }
+
+        // Narrator overlay — rendered AFTER bottom controls so it layers on top
+        if (narratorEnabled && narratorMessages.isNotEmpty()) {
+            NarratorOverlay(
+                messages = narratorMessages,
+                onDismiss = { viewModel.dismissNarratorMessage(it) },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 200.dp)
+                    .zIndex(1f)
+            )
         }
 
         // Peer event snackbar
@@ -267,15 +291,4 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
         )
     }
 
-    // AI Settings dialog
-    if (showAiSettings) {
-        AiSettingsDialog(
-            onTestConnection = { viewModel.testAiConnection() },
-            testState = aiTestState,
-            onDismiss = {
-                showAiSettings = false
-                viewModel.resetAiTestState()
-            }
-        )
-    }
 }
