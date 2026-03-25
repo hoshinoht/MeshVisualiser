@@ -114,7 +114,7 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun MeshVisualiserTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,  // was true — preserve brand palette
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

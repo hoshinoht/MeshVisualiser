@@ -118,6 +118,7 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.5.0-alpha14")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.runtime:runtime-livedata")
+    implementation("androidx.compose.ui:ui-text-google-fonts:1.7.8")
 
     // Google Play Services - Nearby Connections
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
