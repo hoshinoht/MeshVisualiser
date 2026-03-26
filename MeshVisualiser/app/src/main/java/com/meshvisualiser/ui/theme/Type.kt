@@ -25,29 +25,15 @@ val DisplayFontFamily = FontFamily(
     Font(googleFont = SpaceGrotesk, fontProvider = provider, weight = FontWeight.Normal),
 )
 
-// Body option 1: JetBrains Mono (technical feel)
-private val JetBrainsMono = GoogleFont("JetBrains Mono")
-val JetBrainsMonoFamily = FontFamily(
-    Font(googleFont = JetBrainsMono, fontProvider = provider, weight = FontWeight.Bold),
-    Font(googleFont = JetBrainsMono, fontProvider = provider, weight = FontWeight.SemiBold),
-    Font(googleFont = JetBrainsMono, fontProvider = provider, weight = FontWeight.Medium),
-    Font(googleFont = JetBrainsMono, fontProvider = provider, weight = FontWeight.Normal),
-    Font(googleFont = JetBrainsMono, fontProvider = provider, weight = FontWeight.Light),
-)
-
-// Body option 2: IBM Plex Sans (precision)
+// Body/Label font: IBM Plex Sans (precision, technical feel)
 private val IbmPlexSans = GoogleFont("IBM Plex Sans")
-val IbmPlexSansFamily = FontFamily(
+val BodyFontFamily = FontFamily(
     Font(googleFont = IbmPlexSans, fontProvider = provider, weight = FontWeight.Bold),
     Font(googleFont = IbmPlexSans, fontProvider = provider, weight = FontWeight.SemiBold),
     Font(googleFont = IbmPlexSans, fontProvider = provider, weight = FontWeight.Medium),
     Font(googleFont = IbmPlexSans, fontProvider = provider, weight = FontWeight.Normal),
     Font(googleFont = IbmPlexSans, fontProvider = provider, weight = FontWeight.Light),
 )
-
-// ── Toggle this line to compare fonts on device ──
-val BodyFontFamily = JetBrainsMonoFamily
-// val BodyFontFamily = IbmPlexSansFamily
 
 val Typography = Typography(
     displaySmall = TextStyle(
