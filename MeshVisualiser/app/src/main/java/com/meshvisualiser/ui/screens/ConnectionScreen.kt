@@ -38,6 +38,7 @@ import com.meshvisualiser.ui.components.HardwareChecklist
 import com.meshvisualiser.ui.components.HardwareIssue
 import com.meshvisualiser.ui.components.HardwareType
 import com.meshvisualiser.ui.theme.StatusConnected
+import com.meshvisualiser.ui.theme.AiBadgeShape
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -405,11 +406,12 @@ private fun AnimatedPresenceDot() {
         label = "dotScale"
     )
 
+    // Cookie4Sided-like shape via AiBadgeShape (Cookie6Sided) for a subtle expressive blip
     Box(
         modifier = Modifier
             .size(10.dp)
             .scale(scale)
-            .clip(CircleShape)
+            .clip(AiBadgeShape)
             .background(StatusConnected)
     )
 }

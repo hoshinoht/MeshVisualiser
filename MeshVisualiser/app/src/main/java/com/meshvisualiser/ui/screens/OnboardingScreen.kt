@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.ui.PermissionHelper
+import com.meshvisualiser.ui.theme.ScoreShape
+import com.meshvisualiser.ui.theme.AiBadgeShape
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -229,12 +231,21 @@ private fun OnboardingPage(
                 modifier = Modifier.padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(96.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                // M3E shaped icon container — ScoreShape (Sunny) gives a warm starburst feel
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(ScoreShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(56.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -321,12 +332,21 @@ private fun PermissionsPage(
                 modifier = Modifier.padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Security,
-                    contentDescription = null,
-                    modifier = Modifier.size(96.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                // M3E shaped icon container — AiBadgeShape (Cookie6Sided) for the security icon
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(AiBadgeShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Security,
+                        contentDescription = null,
+                        modifier = Modifier.size(56.dp),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 

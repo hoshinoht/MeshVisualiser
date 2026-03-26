@@ -7,6 +7,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,12 +23,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.MeshState
+import com.meshvisualiser.ui.theme.StepConnectedShape
+import com.meshvisualiser.ui.theme.StepDiscoveringShape
+import com.meshvisualiser.ui.theme.StepElectingShape
+import com.meshvisualiser.ui.theme.StepResolvingShape
 
 private const val STEP_PULSE_MS = 800
 
@@ -96,43 +101,24 @@ fun MeshFormationStepper(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Canvas(modifier = Modifier.size(10.dp)) {
-                    when {
-                        isCompleted -> {
-                            // Filled dot with check mark
-                            drawCircle(color = dotColor)
-                            // Draw a small check mark (white) inside
-                            val cx = size.width / 2f
-                            val cy = size.height / 2f
-                            val s = size.width * 0.3f
-                            drawLine(
-                                color = Color.White,
-                                start = Offset(cx - s, cy),
-                                end = Offset(cx - s * 0.2f, cy + s * 0.7f),
-                                strokeWidth = 2f,
-                                cap = StrokeCap.Round
-                            )
-                            drawLine(
-                                color = Color.White,
-                                start = Offset(cx - s * 0.2f, cy + s * 0.7f),
-                                end = Offset(cx + s, cy - s * 0.6f),
-                                strokeWidth = 2f,
-                                cap = StrokeCap.Round
-                            )
-                        }
-                        isCurrent -> {
-                            // Pulsing filled dot for active step
-                            drawCircle(color = dotColor.copy(alpha = pulseAlpha))
-                        }
-                        else -> {
-                            // Hollow dot for future steps
-                            drawCircle(
-                                color = dotColor,
-                                style = Stroke(width = 2f)
-                            )
-                        }
-                    }
+                val stepShape = when (step.state) {
+                    MeshState.DISCOVERING -> StepDiscoveringShape
+                    MeshState.ELECTING -> StepElectingShape
+                    MeshState.RESOLVING -> StepResolvingShape
+                    MeshState.CONNECTED -> StepConnectedShape
                 }
+                Box(
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clip(stepShape)
+                        .background(
+                            when {
+                                isCompleted -> dotColor
+                                isCurrent -> dotColor.copy(alpha = pulseAlpha)
+                                else -> dotColor.copy(alpha = 0.3f)
+                            }
+                        )
+                )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = step.label,

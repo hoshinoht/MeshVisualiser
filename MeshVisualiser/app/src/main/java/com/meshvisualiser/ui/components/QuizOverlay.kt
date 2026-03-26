@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.meshvisualiser.quiz.QuizState
 import com.meshvisualiser.ui.theme.LogAck
 import com.meshvisualiser.ui.theme.LogError
+import com.meshvisualiser.ui.theme.ScoreShape
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -155,11 +156,11 @@ private fun QuestionScreen(
                 modifier = Modifier.size(40.dp).scale(timerScale),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(
+                CircularWavyProgressIndicator(
                     progress = { timerSeconds / 30f },
                     modifier = Modifier.fillMaxSize(),
                     color = if (timerSeconds <= 10) LogError else MaterialTheme.colorScheme.primary,
-                    strokeWidth = 3.dp
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
                 Text(
                     text = "$timerSeconds",
@@ -170,12 +171,11 @@ private fun QuestionScreen(
         }
 
         // Progress bar
-        LinearProgressIndicator(
+        LinearWavyProgressIndicator(
             progress = { (questionIndex + 1).toFloat() / totalQuestions },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp)
-                .height(4.dp),
+                .padding(vertical = 8.dp),
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
@@ -293,17 +293,26 @@ private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit, onReplay
         val percentage = if (quizState.questions.isNotEmpty())
             (quizState.score * 100) / quizState.questions.size else 0
 
-        Text(
-            text = "${quizState.score} / ${quizState.questions.size}",
-            style = MaterialTheme.typography.displaySmall,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Text(
-            text = "$percentage%",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Box(
+            modifier = Modifier
+                .size(120.dp)
+                .clip(ScoreShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "${quizState.score} / ${quizState.questions.size}",
+                    style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    text = "$percentage%",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 

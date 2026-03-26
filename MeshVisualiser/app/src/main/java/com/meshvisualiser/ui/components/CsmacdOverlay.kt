@@ -18,6 +18,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.simulation.CsmaState
 import com.meshvisualiser.simulation.CsmacdState
+import com.meshvisualiser.ui.theme.AiBadgeShape
+import com.meshvisualiser.ui.theme.StepConnectedShape
+import com.meshvisualiser.ui.theme.StepDiscoveringShape
+import com.meshvisualiser.ui.theme.StepResolvingShape
 
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -69,11 +73,19 @@ fun CsmacdOverlay(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                // State indicator dot
+                // State indicator: M3E expressive shape per CSMA state
+                val csmaShape = when (csmaState.currentState) {
+                    CsmaState.IDLE -> CircleShape
+                    CsmaState.SENSING -> StepDiscoveringShape    // diamond = scanning
+                    CsmaState.TRANSMITTING -> StepConnectedShape // flower = active flow
+                    CsmaState.COLLISION -> AiBadgeShape          // cookie6 = spiky/collision
+                    CsmaState.BACKOFF -> StepResolvingShape      // clover = waiting/backoff
+                    CsmaState.SUCCESS -> StepConnectedShape      // flower = success
+                }
                 Box(
                     modifier = Modifier
                         .size(16.dp)
-                        .clip(CircleShape)
+                        .clip(csmaShape)
                         .background(stateColor)
                 )
 

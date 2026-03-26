@@ -1,6 +1,7 @@
 package com.meshvisualiser.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
@@ -13,8 +14,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.MeshState
+import com.meshvisualiser.ui.theme.StepConnectedShape
+import com.meshvisualiser.ui.theme.StepDiscoveringShape
+import com.meshvisualiser.ui.theme.StepElectingShape
+import com.meshvisualiser.ui.theme.StepResolvingShape
 
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -66,12 +72,26 @@ fun StatusOverlay(
                         MeshState.RESOLVING -> Icons.Default.Sync
                         MeshState.CONNECTED -> Icons.Default.Check
                     }
-                    Icon(
-                        imageVector = stateIcon,
-                        contentDescription = meshState.name,
-                        tint = stateColor,
-                        modifier = Modifier.size(14.dp)
-                    )
+                    val iconShape = when (meshState) {
+                        MeshState.DISCOVERING -> StepDiscoveringShape
+                        MeshState.ELECTING -> StepElectingShape
+                        MeshState.RESOLVING -> StepResolvingShape
+                        MeshState.CONNECTED -> StepConnectedShape
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(iconShape)
+                            .background(stateColor.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = stateIcon,
+                            contentDescription = meshState.name,
+                            tint = stateColor,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
                     Text(
                         text = statusMessage,
                         style = MaterialTheme.typography.labelMedium,

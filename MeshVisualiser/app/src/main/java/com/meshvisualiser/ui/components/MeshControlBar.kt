@@ -326,7 +326,7 @@ fun MeshControlBar(
             ) {
                 // ButtonGroup: Direct | CSMA/CD
                 @Suppress("DEPRECATION")
-                ButtonGroup(modifier = Modifier.weight(1f)) {
+                ButtonGroup(modifier = Modifier.weight(0.55f)) {
                     ToggleButton(
                         checked = transmissionMode == TransmissionMode.DIRECT,
                         onCheckedChange = { if (it) onModeChanged(TransmissionMode.DIRECT) }
@@ -381,13 +381,6 @@ fun MeshControlBar(
                             ),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "UDP",
                                 color = MaterialTheme.colorScheme.onTertiaryContainer,
