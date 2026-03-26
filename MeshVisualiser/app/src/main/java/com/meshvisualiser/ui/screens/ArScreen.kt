@@ -169,8 +169,9 @@ private fun ArHud(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                 )
-                                LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                                @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+                                LinearWavyProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(),
                                     color = MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                                 )
@@ -269,11 +270,10 @@ private fun ArHud(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
+                        @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+                        LinearWavyProgressIndicator(
                             progress = { syncedPeerCount.toFloat() / totalPeerCount.coerceAtLeast(1) },
-                            modifier = Modifier
-                                .width(100.dp)
-                                .height(4.dp),
+                            modifier = Modifier.width(100.dp),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )

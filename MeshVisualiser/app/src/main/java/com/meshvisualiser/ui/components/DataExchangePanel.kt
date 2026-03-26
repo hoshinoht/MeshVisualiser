@@ -341,15 +341,15 @@ fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (isIndeterminate) {
-                    LinearProgressIndicator(
-                        modifier = Modifier.weight(1f).height(4.dp),
+                    LinearWavyProgressIndicator(
+                        modifier = Modifier.weight(1f),
                         color = protocolColor,
                         trackColor = protocolColor.copy(alpha = 0.15f)
                     )
                 } else {
-                    LinearProgressIndicator(
+                    LinearWavyProgressIndicator(
                         progress = { progressAnimatable.value },
-                        modifier = Modifier.weight(1f).height(4.dp),
+                        modifier = Modifier.weight(1f),
                         color = protocolColor,
                         trackColor = protocolColor.copy(alpha = 0.15f)
                     )

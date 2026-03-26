@@ -3,28 +3,24 @@ package com.meshvisualiser.ar
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.meshvisualiser.MeshVisualizerApp
 import com.google.ar.core.Anchor
 import com.google.ar.core.Config
 import com.google.ar.core.Session
+import com.meshvisualiser.MeshVisualizerApp
 
 /**
  * Manages ARCore Cloud Anchor hosting and resolution.
  *
  * Usage:
- *  - Call [configureSession] once when the ARCore Session is created.
- *  - Leader calls [hostAnchor] after placing a local anchor; shares the returned cloud ID via mesh.
- *  - Followers call [resolveAnchor] with the cloud ID received from the leader.
- *
- * Currently dormant — wired in but not yet called from [ArSessionManager].
- * Enable by calling [configureSession] in the ArScreen factory and routing
- * the hosted cloud anchor ID through your mesh messaging layer.
+ * - Call [configureSession] once when the ARCore Session is created.
+ * - Leader calls [hostAnchor] after placing a local anchor; shares the returned cloud ID via mesh.
+ * - Followers call [resolveAnchor] with the cloud ID received from the leader.
  */
 class CloudAnchorManager(
-    private val onAnchorHosted: (cloudAnchorId: String, anchor: Anchor) -> Unit,
-    private val onAnchorResolved: (anchor: Anchor) -> Unit,
-    private val onResolveFailed: () -> Unit,
-    private val onError: (message: String) -> Unit
+        private val onAnchorHosted: (cloudAnchorId: String, anchor: Anchor) -> Unit,
+        private val onAnchorResolved: (anchor: Anchor) -> Unit,
+        private val onResolveFailed: () -> Unit,
+        private val onError: (message: String) -> Unit
 ) {
     companion object {
         private const val TAG = "CloudAnchorManager"
@@ -48,14 +44,22 @@ class CloudAnchorManager(
     private val mainHandler = Handler(Looper.getMainLooper())
 
     fun hostAnchor(localAnchor: Anchor) {
-        val session = this.session ?: run {
-            Log.e(TAG, "Leader: hostAnchor called but session is NULL")
-            onError("AR session not configured"); return
-        }
+        val session =
+                this.session
+                        ?: run {
+                            Log.e(TAG, "Leader: hostAnchor called but session is NULL")
+                            onError("AR session not configured")
+                            return
+                        }
         Log.d(TAG, "Leader: calling hostCloudAnchorAsync...")
         try {
-            session.hostCloudAnchorAsync(localAnchor, MeshVisualizerApp.CLOUD_ANCHOR_TTL_DAYS) { cloudAnchorId, state ->
-                Log.d(TAG, "Leader: hostCloudAnchorAsync callback — state=$state, id=$cloudAnchorId")
+            session.hostCloudAnchorAsync(localAnchor, MeshVisualizerApp.CLOUD_ANCHOR_TTL_DAYS) {
+                    cloudAnchorId,
+                    state ->
+                Log.d(
+                        TAG,
+                        "Leader: hostCloudAnchorAsync callback — state=$state, id=$cloudAnchorId"
+                )
                 if (state == Anchor.CloudAnchorState.SUCCESS) {
                     Log.d(TAG, "Leader: hosting SUCCESS, id=$cloudAnchorId")
                     mainHandler.post { onAnchorHosted(cloudAnchorId, localAnchor) }
@@ -71,11 +75,17 @@ class CloudAnchorManager(
     }
 
     fun resolveAnchor(cloudAnchorId: String) {
-        val session = this.session ?: run {
-            Log.e(TAG, "Follower: resolveAnchor called but session is NULL")
-            onError("AR session not configured"); return
-        }
-        Log.d(TAG, "Follower: session exists, calling resolveCloudAnchorAsync for id=$cloudAnchorId")
+        val session =
+                this.session
+                        ?: run {
+                            Log.e(TAG, "Follower: resolveAnchor called but session is NULL")
+                            onError("AR session not configured")
+                            return
+                        }
+        Log.d(
+                TAG,
+                "Follower: session exists, calling resolveCloudAnchorAsync for id=$cloudAnchorId"
+        )
 
         try {
             session.resolveCloudAnchorAsync(cloudAnchorId) { anchor, state ->
@@ -98,5 +108,7 @@ class CloudAnchorManager(
         }
     }
 
-    fun cleanup() { session = null }
+    fun cleanup() {
+        session = null
+    }
 }
