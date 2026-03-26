@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -37,10 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -66,8 +64,7 @@ fun SessionSummarySheet(
             title = {
                 Text(
                     "Start New Session?",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.titleMedium
                 )
             },
             text = {
@@ -97,7 +94,7 @@ fun SessionSummarySheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(
             modifier = Modifier
@@ -108,7 +105,6 @@ fun SessionSummarySheet(
             Text(
                 text = "Session Summary",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
@@ -154,7 +150,8 @@ fun SessionSummarySheet(
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Text("  Retry", style = MaterialTheme.typography.labelMedium)
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                            Text("Retry", style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -179,10 +176,8 @@ fun SessionSummarySheet(
                         MarkdownText(
                             markdown = summaryContent,
                             modifier = Modifier.fillMaxWidth(),
-                            style = TextStyle(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface
                             ),
                             linkColor = MaterialTheme.colorScheme.primary,
                             isTextSelectable = true
@@ -212,7 +207,8 @@ fun SessionSummarySheet(
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Text("  Copy")
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                            Text("Copy")
                         }
 
                         // New Session button — triggers confirmation dialog

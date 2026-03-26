@@ -36,6 +36,9 @@ import kotlin.math.sin
 import kotlin.random.Random
 import kotlinx.coroutines.launch
 
+private const val PACKET_TRAVEL_MS = 1500  // deliberately slow for educational visibility
+private const val PACKET_DROP_MS = 2000    // slower to emphasize the failure
+
 private data class ActivePacketAnim(
     val eventId: Long,
     val fromId: Long,
@@ -126,10 +129,10 @@ fun MeshVisualizationView(
     val activeAnims = remember { mutableStateListOf<ActivePacketAnim>() }
     val scope = rememberCoroutineScope()
 
-    // Packet travel: 1500ms ease-in-out — slow enough to clearly see the dot travel
-    val packetTravelSpec = tween<Float>(durationMillis = 1500, easing = FastOutSlowInEasing)
-    // Drop travel: 2000ms — even slower so users notice the stop + fade
-    val packetDropSpec = tween<Float>(durationMillis = 2000, easing = LinearEasing)
+    // Packet travel: PACKET_TRAVEL_MS ease-in-out — slow enough to clearly see the dot travel
+    val packetTravelSpec = tween<Float>(durationMillis = PACKET_TRAVEL_MS, easing = FastOutSlowInEasing)
+    // Drop travel: PACKET_DROP_MS — even slower so users notice the stop + fade
+    val packetDropSpec = tween<Float>(durationMillis = PACKET_DROP_MS, easing = LinearEasing)
     val pulseSpec = spatialSpec // reuse the bouncy default spatial for pulse
 
     LaunchedEffect(packetAnimEvents) {

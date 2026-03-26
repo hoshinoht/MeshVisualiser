@@ -4,6 +4,10 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -159,9 +163,7 @@ fun ConnectionScreen(
                                 && displayName.isNotBlank()
                                 && groupCode.isNotEmpty()
                                 && groupCodeError == null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         if (connectionState == ConnectionFlowState.JOINING) {
@@ -180,7 +182,15 @@ fun ConnectionScreen(
             // ── Lobby card (shown after joining) ──
             AnimatedVisibility(
                 visible = connectionState == ConnectionFlowState.IN_LOBBY
-                        || connectionState == ConnectionFlowState.STARTING
+                        || connectionState == ConnectionFlowState.STARTING,
+                enter = slideInVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                    initialOffsetY = { it / 4 }
+                ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
+                exit = slideOutVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                    targetOffsetY = { it / 4 }
+                ) + fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
             ) {
                 Column {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -266,7 +276,7 @@ fun ConnectionScreen(
                                 )
                             } else {
                                 Surface(
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                                     shape = MaterialTheme.shapes.small,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -301,7 +311,17 @@ fun ConnectionScreen(
                             }
 
                             // Discovery troubleshooting
-                            AnimatedVisibility(visible = discoveryTimeoutReached && validPeerCount == 0) {
+                            AnimatedVisibility(
+                                visible = discoveryTimeoutReached && validPeerCount == 0,
+                                enter = slideInVertically(
+                                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                                    initialOffsetY = { it / 4 }
+                                ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
+                                exit = slideOutVertically(
+                                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                                    targetOffsetY = { it / 4 }
+                                ) + fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
+                            ) {
                                 Surface(
                                     color = MaterialTheme.colorScheme.tertiaryContainer,
                                     shape = MaterialTheme.shapes.small,
@@ -335,9 +355,7 @@ fun ConnectionScreen(
                                 onClick = onStartMesh,
                                 enabled = validPeerCount >= 1
                                         && connectionState == ConnectionFlowState.IN_LOBBY,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 shape = MaterialTheme.shapes.medium
                             ) {
                                 if (connectionState == ConnectionFlowState.STARTING) {
@@ -352,11 +370,8 @@ fun ConnectionScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            OutlinedButton(onClick = onLeaveGroup) {
-                                Text(
-                                    "Leave Group",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            TextButton(onClick = onLeaveGroup) {
+                                Text("Leave Group")
                             }
                         }
                     }
@@ -371,6 +386,8 @@ fun ConnectionScreen(
     }
 }
 
+private const val PRESENCE_PULSE_MS = 900
+
 /**
  * Animated presence dot: a pulsing circle using [rememberInfiniteTransition].
  * Indicates the peer is actively connected.
@@ -382,7 +399,7 @@ private fun AnimatedPresenceDot() {
         initialValue = 0.85f,
         targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900),
+            animation = tween(durationMillis = PRESENCE_PULSE_MS),
             repeatMode = RepeatMode.Reverse
         ),
         label = "dotScale"

@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.MeshState
 
+private const val STEP_PULSE_MS = 800
+
 private data class StepInfo(
     val label: String,
     val sublabel: String,
@@ -60,7 +62,7 @@ fun MeshFormationStepper(
         initialValue = 0.4f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800),
+            animation = tween(durationMillis = STEP_PULSE_MS),
             repeatMode = RepeatMode.Reverse
         ),
         label = "stepPulseAlpha"

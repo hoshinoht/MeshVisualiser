@@ -237,8 +237,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
         ModalBottomSheet(
             onDismissRequest = { showDataSheet = false },
             sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = MaterialTheme.shapes.large
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
             DataExchangePanel(
                 dataLogs = dataLogs,

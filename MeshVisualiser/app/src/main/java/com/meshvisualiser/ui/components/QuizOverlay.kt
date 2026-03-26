@@ -10,6 +10,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,8 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.quiz.QuizState
@@ -38,7 +38,7 @@ fun QuizOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -46,11 +46,12 @@ fun QuizOverlay(
             ),
         contentAlignment = Alignment.Center
     ) {
-        GlassSurface(
+        ElevatedCard(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .padding(16.dp),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.extraLarge,
+            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp)
         ) {
             if (quizState.isFinished) {
                 // Final score screen
@@ -295,8 +296,7 @@ private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit, onReplay
         Text(
             text = "${quizState.score} / ${quizState.questions.size}",
             style = MaterialTheme.typography.displaySmall,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
+            color = MaterialTheme.colorScheme.primary
         )
 
         Text(

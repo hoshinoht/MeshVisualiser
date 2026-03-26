@@ -15,8 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.meshvisualiser.ui.theme.LogTcp
-import com.meshvisualiser.ui.theme.LogUdp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.meshvisualiser.ar.ArSessionManager
 import com.meshvisualiser.ar.ArNodeManager
@@ -114,7 +112,7 @@ private fun ArHud(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.55f)),
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f)),
                 contentAlignment = Alignment.Center
             ) {
                 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -214,15 +212,15 @@ private fun ArHud(
             },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
-                titleContentColor = Color.White,
-                navigationIconContentColor = Color.White
+                titleContentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                navigationIconContentColor = MaterialTheme.colorScheme.inverseOnSurface
             ),
             modifier = Modifier.align(Alignment.TopStart)
         )
 
         // Color legend - top right
         Surface(
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
             shape = MaterialTheme.shapes.small,
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -245,7 +243,7 @@ private fun ArHud(
         ) {
             if (cloudAnchorStatus != null) {
                 Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
                     shape = MaterialTheme.shapes.small
                 ) {
                     Text(
@@ -261,7 +259,7 @@ private fun ArHud(
 
             if (totalPeerCount > 0 && syncedPeerCount < totalPeerCount) {
                 Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
                     shape = MaterialTheme.shapes.small
                 ) {
                     Column(modifier = Modifier.padding(8.dp)) {
@@ -297,7 +295,7 @@ private fun ArHud(
 
                 if (validPeers.isEmpty()) {
                     Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         Text(
@@ -326,7 +324,7 @@ private fun ArHud(
 
                     // Peer selector chips
                     Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         Row(
@@ -357,7 +355,7 @@ private fun ArHud(
 
                     // Send buttons — SplitButtonLayout: TCP (leading) | UDP (trailing)
                     Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
                         shape = MaterialTheme.shapes.medium
                     ) {
                         Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -368,13 +366,13 @@ private fun ArHud(
                                         onClick = onSendTcp,
                                         enabled = selectedPeerId != null,
                                         colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = LogTcp.copy(alpha = 0.3f)
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer
                                         ),
                                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                                     ) {
                                         Text(
                                             "TCP",
-                                            color = LogTcp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                                             style = MaterialTheme.typography.labelSmall
                                         )
                                     }
@@ -384,13 +382,13 @@ private fun ArHud(
                                         onClick = onSendUdp,
                                         enabled = selectedPeerId != null,
                                         colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = LogUdp.copy(alpha = 0.3f)
+                                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
                                         ),
                                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                                     ) {
                                         Text(
                                             "UDP",
-                                            color = LogUdp,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
                                             style = MaterialTheme.typography.labelSmall
                                         )
                                     }
@@ -760,7 +758,7 @@ fun ArScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.6f)),
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f)),
                 contentAlignment = Alignment.Center
             ) {
                 ElevatedCard(

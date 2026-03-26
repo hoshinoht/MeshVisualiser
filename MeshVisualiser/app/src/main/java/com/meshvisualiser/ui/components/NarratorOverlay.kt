@@ -36,7 +36,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxSize
@@ -91,11 +90,11 @@ fun NarratorOverlay(
                     enter = slideInVertically(
                         animationSpec = spatialSpec,
                         initialOffsetY = { it / 2 }
-                    ) + fadeIn(),
+                    ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
                     exit = slideOutVertically(
                         animationSpec = spatialSpec,
                         targetOffsetY = { it / 2 }
-                    ) + fadeOut()
+                    ) + fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
                 ) {
                     NarratorCard(
                         message = message,
@@ -184,18 +183,16 @@ private fun NarratorCard(
                     Text(
                         text = message.title,
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
-                        onClick = { if (!isDismissed) { isDismissed = true; onDismiss() } },
-                        modifier = Modifier.size(24.dp)
+                        onClick = { if (!isDismissed) { isDismissed = true; onDismiss() } }
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Dismiss",
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

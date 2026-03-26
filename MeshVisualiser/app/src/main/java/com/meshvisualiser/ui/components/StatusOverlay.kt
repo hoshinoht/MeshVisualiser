@@ -15,10 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.MeshState
-import com.meshvisualiser.ui.theme.StatusConnected
-import com.meshvisualiser.ui.theme.StatusDiscovering
-import com.meshvisualiser.ui.theme.StatusElecting
-import com.meshvisualiser.ui.theme.StatusResolving
+
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -30,10 +27,10 @@ fun StatusOverlay(
 ) {
     val stateColor by animateColorAsState(
         targetValue = when (meshState) {
-            MeshState.DISCOVERING -> StatusDiscovering
-            MeshState.ELECTING -> StatusElecting
-            MeshState.RESOLVING -> StatusResolving
-            MeshState.CONNECTED -> StatusConnected
+            MeshState.DISCOVERING -> MaterialTheme.colorScheme.tertiary
+            MeshState.ELECTING -> MaterialTheme.colorScheme.secondary
+            MeshState.RESOLVING -> MaterialTheme.colorScheme.tertiary
+            MeshState.CONNECTED -> MaterialTheme.colorScheme.primary
         },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "statusColor"

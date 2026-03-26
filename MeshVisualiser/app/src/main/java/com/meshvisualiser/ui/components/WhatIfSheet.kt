@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Person
@@ -46,12 +45,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.ai.ScenarioExplorer.WhatIfExchange
 
 import com.meshvisualiser.ui.theme.ChatBubbleUser
 import com.meshvisualiser.ui.theme.ChatBubbleAi
+import com.meshvisualiser.ui.theme.PillShape
 
 // Aliases for readability (tokens defined in Shape.kt)
 private val UserBubbleShape = ChatBubbleUser
@@ -79,7 +78,7 @@ fun WhatIfSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(
             modifier = Modifier
@@ -90,7 +89,6 @@ fun WhatIfSheet(
             Text(
                 text = "What-If Explorer",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
@@ -160,7 +158,7 @@ fun WhatIfSheet(
                     // AI response — asymmetric bubble, left-leaning
                     AnimatedVisibility(
                         visible = exchange.answer != null || exchange.isLoading || exchange.error != null,
-                        enter = fadeIn()
+                        enter = fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
                     ) {
                         Card(
                             colors = CardDefaults.cardColors(
@@ -230,7 +228,7 @@ fun WhatIfSheet(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     enabled = !isLoading,
-                    shape = RoundedCornerShape(50),
+                    shape = PillShape,
                     colors = TextFieldDefaults.colors(
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,

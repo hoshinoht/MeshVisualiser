@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.simulation.CsmaState
 import com.meshvisualiser.simulation.CsmacdState
-import com.meshvisualiser.ui.theme.*
+
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -26,14 +26,20 @@ fun CsmacdOverlay(
     csmaState: CsmacdState,
     modifier: Modifier = Modifier
 ) {
+    val idleColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val sensingColor = MaterialTheme.colorScheme.tertiary
+    val transmittingColor = MaterialTheme.colorScheme.primary
+    val collisionColor = MaterialTheme.colorScheme.error
+    val backoffColor = MaterialTheme.colorScheme.secondary
+
     val stateColor by animateColorAsState(
         targetValue = when (csmaState.currentState) {
-            CsmaState.IDLE -> CsmaIdle
-            CsmaState.SENSING -> CsmaSensing
-            CsmaState.TRANSMITTING -> CsmaTransmitting
-            CsmaState.COLLISION -> CsmaCollision
-            CsmaState.BACKOFF -> CsmaBackoff
-            CsmaState.SUCCESS -> CsmaTransmitting
+            CsmaState.IDLE -> idleColor
+            CsmaState.SENSING -> sensingColor
+            CsmaState.TRANSMITTING -> transmittingColor
+            CsmaState.COLLISION -> collisionColor
+            CsmaState.BACKOFF -> backoffColor
+            CsmaState.SUCCESS -> transmittingColor
         },
         animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "csmaColor"
@@ -98,7 +104,7 @@ fun CsmacdOverlay(
                 Text(
                     text = "Collisions: ${csmaState.collisionCount} | Backoff: ${csmaState.backoffSlots} slots",
                     style = MaterialTheme.typography.bodySmall,
-                    color = CsmaCollision,
+                    color = collisionColor,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -107,7 +113,7 @@ fun CsmacdOverlay(
                 Text(
                     text = "Backoff remaining: ${csmaState.backoffRemainingMs}ms",
                     style = MaterialTheme.typography.bodySmall,
-                    color = CsmaBackoff,
+                    color = backoffColor,
                     fontFamily = FontFamily.Monospace
                 )
             }

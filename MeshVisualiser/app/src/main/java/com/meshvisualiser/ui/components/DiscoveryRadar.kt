@@ -31,6 +31,10 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
+private const val RING_PULSE_MS = 2000
+private const val RING_DELAY_MS = 600
+private const val SWEEP_ROTATION_MS = 8000
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DiscoveryRadar(
@@ -49,7 +53,7 @@ fun DiscoveryRadar(
         initialValue = 0.6f,
         targetValue = 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearOutSlowInEasing),
+            animation = tween(RING_PULSE_MS, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "ring1Alpha"
@@ -58,7 +62,7 @@ fun DiscoveryRadar(
         initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearOutSlowInEasing),
+            animation = tween(RING_PULSE_MS, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "ring1Scale"
@@ -68,7 +72,7 @@ fun DiscoveryRadar(
         initialValue = 0.6f,
         targetValue = 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, delayMillis = 667, easing = LinearOutSlowInEasing),
+            animation = tween(RING_PULSE_MS, delayMillis = RING_DELAY_MS, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "ring2Alpha"
@@ -77,7 +81,7 @@ fun DiscoveryRadar(
         initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, delayMillis = 667, easing = LinearOutSlowInEasing),
+            animation = tween(RING_PULSE_MS, delayMillis = RING_DELAY_MS, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "ring2Scale"
@@ -87,7 +91,7 @@ fun DiscoveryRadar(
         initialValue = 0.6f,
         targetValue = 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, delayMillis = 1334, easing = LinearOutSlowInEasing),
+            animation = tween(RING_PULSE_MS, delayMillis = RING_DELAY_MS * 2, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "ring3Alpha"
@@ -96,7 +100,7 @@ fun DiscoveryRadar(
         initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, delayMillis = 1334, easing = LinearOutSlowInEasing),
+            animation = tween(RING_PULSE_MS, delayMillis = RING_DELAY_MS * 2, easing = LinearOutSlowInEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "ring3Scale"
@@ -107,7 +111,7 @@ fun DiscoveryRadar(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(8000, easing = LinearEasing),
+            animation = tween(SWEEP_ROTATION_MS, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rotation"

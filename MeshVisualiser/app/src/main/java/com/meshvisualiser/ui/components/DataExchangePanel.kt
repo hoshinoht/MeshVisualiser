@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -170,22 +169,14 @@ fun DataExchangePanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Toggle raw/friendly view
-            Row(
-                modifier = Modifier.clickable { onToggleRawLog() },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+            TextButton(onClick = onToggleRawLog) {
                 Icon(
                     imageVector = if (showRawLog) Icons.Default.Visibility else Icons.Default.Code,
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    modifier = Modifier.size(ButtonDefaults.IconSize)
                 )
-                Text(
-                    text = if (showRawLog) "Friendly view" else "Raw protocol log",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text(if (showRawLog) "Friendly view" else "Raw protocol log")
             }
 
             // Divider
@@ -196,28 +187,14 @@ fun DataExchangePanel(
             )
 
             // Toggle hints
-            Row(
-                modifier = Modifier.clickable { onToggleHints() },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+            TextButton(onClick = onToggleHints) {
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = if (showHints)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                    modifier = Modifier.size(ButtonDefaults.IconSize)
                 )
-                Text(
-                    text = if (showHints) "Hide hints" else "Show hints",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (showHints)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text(if (showHints) "Hide hints" else "Show hints")
             }
         }
     }
@@ -318,7 +295,7 @@ fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
         ),
         shape = MaterialTheme.shapes.small
     ) {
@@ -381,7 +358,7 @@ fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
                     text = if (isSend) "You \u2192 Peer" else "Peer \u2192 You",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp
+                    fontSize = 11.sp
                 )
             }
 
@@ -390,7 +367,7 @@ fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
                 visible = showStatus,
                 enter = expandVertically(
                     animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()
-                ) + fadeIn()
+                ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
             ) {
                 Column(modifier = Modifier.padding(top = 6.dp)) {
                     val statusInfo = getStatusInfo(event)
@@ -427,7 +404,7 @@ fun TransferEventCard(event: TransferEvent, showHints: Boolean = true) {
                             Text(
                                 text = statusInfo.hint,
                                 style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 10.sp,
+                                    fontSize = 11.sp,
                                     fontStyle = FontStyle.Italic
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)

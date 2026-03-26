@@ -58,8 +58,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.PeerInfo
 import com.meshvisualiser.models.TransmissionMode
-import com.meshvisualiser.ui.theme.LogTcp
-import com.meshvisualiser.ui.theme.LogUdp
 import com.meshvisualiser.ui.theme.StatusLeader
 
 /**
@@ -171,7 +169,8 @@ fun MeshFabMenu(
                 ) {
                     Crossfade(
                         targetState = menuExpanded,
-                        label = "fabMenuIconCrossfade"
+                        label = "fabMenuIconCrossfade",
+                        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
                     ) { expanded ->
                         if (expanded) {
                             Icon(
@@ -252,7 +251,7 @@ fun MeshControlBar(
     // FlexibleBottomAppBar not in alpha14 → Surface with bottom insets
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+        color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 6.dp,
         shadowElevation = 0.dp
     ) {
@@ -344,12 +343,13 @@ fun MeshControlBar(
 
                 // SplitButtonLayout: TCP (leading) | UDP (trailing)
                 SplitButtonLayout(
+                    modifier = Modifier.weight(0.45f),
                     leadingButton = {
                         FilledTonalButton(
                             onClick = onSendTcp,
                             enabled = selectedPeerId != null && !isTcpBusy,
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = LogTcp.copy(alpha = 0.25f)
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
                             ),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                         ) {
@@ -361,13 +361,13 @@ fun MeshControlBar(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp),
-                                    tint = LogTcp
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                             }
                             Text(
                                 text = "TCP",
-                                color = LogTcp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
@@ -377,7 +377,7 @@ fun MeshControlBar(
                             onClick = onSendUdp,
                             enabled = selectedPeerId != null,
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = LogUdp.copy(alpha = 0.25f)
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
                             ),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                         ) {
@@ -385,12 +385,12 @@ fun MeshControlBar(
                                 imageVector = Icons.AutoMirrored.Filled.Send,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp),
-                                tint = LogUdp
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "UDP",
-                                color = LogUdp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
