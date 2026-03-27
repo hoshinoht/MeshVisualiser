@@ -33,10 +33,10 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.meshvisualiser.ui.DataLogEntry
-import com.meshvisualiser.ui.TransferEvent
-import com.meshvisualiser.ui.TransferStatus
-import com.meshvisualiser.ui.TransferType
+import com.meshvisualiser.models.DataLogEntry
+import com.meshvisualiser.models.TransferEvent
+import com.meshvisualiser.models.TransferStatus
+import com.meshvisualiser.models.TransferType
 import com.meshvisualiser.ui.theme.LogAck
 import com.meshvisualiser.ui.theme.LogError
 import com.meshvisualiser.ui.theme.LogTcp

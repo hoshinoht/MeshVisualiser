@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.PeerInfo
-import com.meshvisualiser.ui.DataLogEntry
+import com.meshvisualiser.models.DataLogEntry
 import com.meshvisualiser.ui.theme.*
 import kotlin.math.PI
 import kotlin.math.cos

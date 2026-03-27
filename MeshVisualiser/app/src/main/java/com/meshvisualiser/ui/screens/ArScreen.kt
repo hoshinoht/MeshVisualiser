@@ -64,7 +64,7 @@ private class ManagedARSceneView(
     var onBeforeDetach: ((ManagedARSceneView) -> Unit)? = null
 
     override fun onDetachedFromWindow() {
-        Log.d(TAG, "onDetachedFromWindow — running pre-detach cleanup")
+        Log.d(TAG, "onDetachedFromWindow -- running pre-detach cleanup")
         try { onBeforeDetach?.invoke(this) }
         catch (e: Exception) { Log.e(TAG, "onBeforeDetach threw: ${e.message}", e) }
         super.onDetachedFromWindow()
@@ -107,7 +107,7 @@ private fun ArHud(
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        // Follower overlay — blocks interaction until anchor is resolved
+        // Follower overlay -- blocks interaction until anchor is resolved
         if (followerState != null && followerState != FollowerState.AnchorResolved) {
             Box(
                 modifier = Modifier
@@ -203,7 +203,7 @@ private fun ArHud(
             }
         }
 
-        // Top bar — always visible
+        // Top bar -- always visible
         TopAppBar(
             title = { Text("AR View", style = MaterialTheme.typography.titleMedium) },
             navigationIcon = {
@@ -282,7 +282,7 @@ private fun ArHud(
             }
         }
 
-        // Bottom controls — only show when anchor resolved
+        // Bottom controls -- only show when anchor resolved
         if (followerState == null || followerState == FollowerState.AnchorResolved) {
             Column(
                 modifier = Modifier
@@ -306,7 +306,7 @@ private fun ArHud(
                         )
                     }
                 } else {
-                    // Reposition button — above peer controls
+                    // Reposition button -- above peer controls
                     TextButton(
                         onClick = onReposition,
                         colors = ButtonDefaults.textButtonColors(
@@ -353,7 +353,7 @@ private fun ArHud(
                         }
                     }
 
-                    // Send buttons — SplitButtonLayout: TCP (leading) | UDP (trailing)
+                    // Send buttons -- SplitButtonLayout: TCP (leading) | UDP (trailing)
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f),
                         shape = MaterialTheme.shapes.medium
@@ -433,12 +433,12 @@ fun ArScreen(
     var arSessionError by remember { mutableStateOf<String?>(null) }
 
     val peers by viewModel.peers.collectAsStateWithLifecycle()
-    val selectedPeerId by viewModel.selectedPeerId.collectAsStateWithLifecycle()
-    val packetEvents by viewModel.packetAnimEvents.collectAsStateWithLifecycle()
+    val selectedPeerId by viewModel.dataExchange.selectedPeerId.collectAsStateWithLifecycle()
+    val packetEvents by viewModel.dataExchange.packetAnimEvents.collectAsStateWithLifecycle()
     val displayName by viewModel.displayName.collectAsStateWithLifecycle()
-    val cloudAnchorId by viewModel.cloudAnchorId.collectAsStateWithLifecycle()
+    val cloudAnchorId by viewModel.cloudAnchor.cloudAnchorId.collectAsStateWithLifecycle()
     val isLeader by viewModel.isLeader.collectAsStateWithLifecycle()
-    val cloudAnchorStatus by viewModel.cloudAnchorStatus.collectAsStateWithLifecycle()
+    val cloudAnchorStatus by viewModel.cloudAnchor.cloudAnchorStatus.collectAsStateWithLifecycle()
 
     // rememberUpdatedState so lambdas inside AndroidView always read latest values
     val currentPeers by rememberUpdatedState(peers)
@@ -446,19 +446,19 @@ fun ArScreen(
     val coroutineScope = rememberCoroutineScope()
     val isDisposed = remember { mutableStateOf(false) }
 
-    // Manager refs — survive recomposition, initialised in AndroidView factory
+    // Manager refs -- survive recomposition, initialised in AndroidView factory
     val sceneViewRef = remember { arrayOfNulls<ARSceneView>(1) }
     val nodeManagerRef = remember { arrayOfNulls<ArNodeManager>(1) }
     val sessionManagerRef = remember { arrayOfNulls<ArSessionManager>(1) }
     val cloudAnchorManagerRef = remember { arrayOfNulls<CloudAnchorManager>(1) }
     val unlitMaterialRef = remember { arrayOfNulls<com.google.android.filament.Material>(1) }
-    // Pre-created packet materials — flyweight: one per color, shared across all animations
+    // Pre-created packet materials -- flyweight: one per color, shared across all animations
     val packetMats = remember { mutableMapOf<String, MaterialInstance>() }
-    // Pooled packet spheres — reuse instead of create/destroy per animation
+    // Pooled packet spheres -- reuse instead of create/destroy per animation
     val packetSpherePool = remember { ArrayDeque<SphereNode>(32) }
     val animatedEventIds = remember { mutableSetOf<Long>() }
     val resolveAttempt = remember { mutableStateOf(0) }
-    val anchorResolved by viewModel.anchorResolved.collectAsStateWithLifecycle()
+    val anchorResolved by viewModel.cloudAnchor.anchorResolved.collectAsStateWithLifecycle()
     val resolveStartTime = remember { mutableStateOf(0L) }
     val resolveTimedOut = remember { mutableStateOf(false) }
 
@@ -467,10 +467,10 @@ fun ArScreen(
         window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            Log.e("CloudAnchorSync", "DisposableEffect onDispose fired — isDisposed set to true")
+            Log.e("CloudAnchorSync", "DisposableEffect onDispose fired -- isDisposed set to true")
             isDisposed.value = true
             animatedEventIds.clear()
-            viewModel.onArScreenLeft()
+            viewModel.cloudAnchor.onArScreenLeft()
         }
     }
 
@@ -498,14 +498,14 @@ fun ArScreen(
             return@LaunchedEffect
         }
         if (isLeader) {
-            Log.d("CloudAnchorSync", "Skipping resolve — this device is leader")
+            Log.d("CloudAnchorSync", "Skipping resolve -- this device is leader")
             return@LaunchedEffect
         }
         Log.d("CloudAnchorSync", "Follower: received cloud anchor ID=$id, attempt=${resolveAttempt.value}, waiting 3s...")
         delay(3000L)
         val sm = sessionManagerRef[0]
         if (sm == null) {
-            Log.e("CloudAnchorSync", "Follower: sessionManager is NULL — will retry in 5s")
+            Log.e("CloudAnchorSync", "Follower: sessionManager is NULL -- will retry in 5s")
             delay(5000L)
             resolveAttempt.value++
             return@LaunchedEffect
@@ -518,15 +518,15 @@ fun ArScreen(
         if (isLeader) return@LaunchedEffect
         Log.d("CloudAnchorSync", "Follower: starting server polling loop")
         var attempt = 0
-        while (viewModel.cloudAnchorId.value == null) {
+        while (viewModel.cloudAnchor.cloudAnchorId.value == null) {
             delay(5_000)
-            if (viewModel.cloudAnchorId.value != null) {
+            if (viewModel.cloudAnchor.cloudAnchorId.value != null) {
                 Log.d("CloudAnchorSync", "Follower: got ID during poll, stopping")
                 return@LaunchedEffect
             }
             attempt++
             Log.d("CloudAnchorSync", "Follower: polling server attempt $attempt")
-            viewModel.fetchAnchorFromServer()
+            viewModel.cloudAnchor.fetchAnchorFromServer()
         }
     }
 
@@ -543,11 +543,11 @@ fun ArScreen(
 
             val fromPos = if (event.fromId == viewModel.localId) localPos
             else nm.getPeerPosition(event.fromId)
-                ?: run { viewModel.consumePacketEvent(event.id); return@forEach }
+                ?: run { viewModel.dataExchange.consumePacketEvent(event.id); return@forEach }
 
             val toPos   = if (event.toId == viewModel.localId) localPos
             else nm.getPeerPosition(event.toId)
-                ?: run { viewModel.consumePacketEvent(event.id); return@forEach }
+                ?: run { viewModel.dataExchange.consumePacketEvent(event.id); return@forEach }
 
             val typeKey = event.type.ifEmpty { "TCP" }
             val color = when (typeKey) {
@@ -558,7 +558,7 @@ fun ArScreen(
                 else -> COLOR_TCP
             }
 
-            viewModel.consumePacketEvent(event.id)
+            viewModel.dataExchange.consumePacketEvent(event.id)
 
             coroutineScope.launch {
                 if (!isDisposed.value) {
@@ -584,7 +584,7 @@ fun ArScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
-                    Log.e("CloudAnchorSync", "AndroidView factory called — scene being created/recreated")
+                    Log.e("CloudAnchorSync", "AndroidView factory called -- scene being created/recreated")
                     val poseManager = PoseManager { pd ->
                         if (!isDisposed.value) viewModel.broadcastPose(
                             pd.x, pd.y, pd.z, pd.qx, pd.qy, pd.qz, pd.qw
@@ -595,19 +595,19 @@ fun ArScreen(
                         onAnchorHosted = { cloudId, _ ->
                             Log.d(TAG, "Cloud anchor hosted: $cloudId")
                             sessionManagerRef[0]?.onCloudAnchorHosted()
-                            viewModel.onCloudAnchorHosted(cloudId)
+                            viewModel.cloudAnchor.onCloudAnchorHosted(cloudId)
                         },
                         onAnchorResolved = { anchor ->
                             Log.d(TAG, "Cloud anchor resolved")
                             sessionManagerRef[0]?.onCloudAnchorResolved(anchor)
-                            viewModel.onCloudAnchorResolved()
+                            viewModel.cloudAnchor.onCloudAnchorResolved()
                         },
                         onResolveFailed = {
                             sessionManagerRef[0]?.onCloudAnchorResolveFailed()
                         },
                         onError = { msg ->
                             Log.e(TAG, "Cloud anchor error: $msg")
-                            viewModel.onCloudAnchorError(msg)
+                            viewModel.cloudAnchor.onCloudAnchorError(msg)
                         }
                     )
                     cloudAnchorManagerRef[0] = cam
@@ -621,7 +621,7 @@ fun ArScreen(
                             config.cloudAnchorMode = Config.CloudAnchorMode.ENABLED
                         },
                         onSessionCreated = { session ->
-                            Log.d(TAG, "Session created — configuring cloud anchors")
+                            Log.d(TAG, "Session created -- configuring cloud anchors")
                             cam.configureSession(session)
                         },
                         onSessionUpdated = { session, frame ->
@@ -639,7 +639,7 @@ fun ArScreen(
                     ).also { sv ->
                         sceneViewRef[0] = sv
 
-                        // Disable all scene lighting — AR objects render as flat color
+                        // Disable all scene lighting -- AR objects render as flat color
                         sv.mainLightNode = null
                         sv.indirectLight = null
 
@@ -670,7 +670,7 @@ fun ArScreen(
                                     it.setParameter("baseColor", 1f, 1f, 1f, 1f)
                                 }
                             } else {
-                                // unlit not available — skip setParameter on these, flag them
+                                // unlit not available -- skip setParameter on these, flag them
                                 sv.materialLoader.createColorInstance(
                                     color = androidx.compose.ui.graphics.Color.White,
                                     metallic = 0f, roughness = 1f, reflectance = 0f
@@ -697,9 +697,9 @@ fun ArScreen(
                                     FeatureMapQuality.SUFFICIENT -> "Hosting shared anchor..."
                                     FeatureMapQuality.GOOD -> "Hosting shared anchor..."
                                 }
-                                viewModel.onCloudAnchorQuality(msg)
+                                viewModel.cloudAnchor.onCloudAnchorQuality(msg)
                             },
-                            onResolveRetryNeeded = {    // ADD
+                            onResolveRetryNeeded = {
                                 resolveAttempt.value++
                                 Log.d("CloudAnchorSync", "Follower: retry triggered, attempt=${resolveAttempt.value}")
                             }
@@ -708,7 +708,7 @@ fun ArScreen(
                         sessionManagerRef[0] = sm
 
                         sv.onBeforeDetach = {
-                            Log.e("CloudAnchorSync", "onBeforeDetach fired — about to destroy AR scene")
+                            Log.e("CloudAnchorSync", "onBeforeDetach fired -- about to destroy AR scene")
                             packetSpherePool.forEach { runCatching { it.destroy() } }
                             packetSpherePool.clear()
 
@@ -740,16 +740,16 @@ fun ArScreen(
             isLeader = isLeader,
             cloudAnchorId = cloudAnchorId,
             anchorResolved = anchorResolved || isLeader && cloudAnchorStatus == ANCHOR_READY_STATUS,
-            onSelectPeer = { viewModel.selectPeer(it) },
-            onSendTcp = { viewModel.sendTcpData() },
-            onSendUdp = { viewModel.sendUdpData() },
+            onSelectPeer = { viewModel.dataExchange.selectPeer(it) },
+            onSendTcp = { viewModel.dataExchange.sendTcpData() },
+            onSendUdp = { viewModel.dataExchange.sendUdpData() },
             onBack = onBack,
             onReposition = { sessionManagerRef[0]?.repositionLocalNode() },
             resolveTimedOut = resolveTimedOut.value,
             onSkipSync = {
                 resolveTimedOut.value = false
                 // Force anchorResolved so UI unblocks
-                viewModel.onCloudAnchorResolved()
+                viewModel.cloudAnchor.onCloudAnchorResolved()
             }
         )
 
@@ -791,7 +791,7 @@ fun ArScreen(
     }
 }
 
-// Packet animation — uses pre-built materials (flyweight) and pooled sphere nodes
+// Packet animation -- uses pre-built materials (flyweight) and pooled sphere nodes
 private suspend fun animatePacket(
     sv: ARSceneView,
     fromPos: Triple<Float, Float, Float>,
@@ -824,7 +824,7 @@ private suspend fun animatePacket(
         )
     )
 
-    // Place directly in world space — no anchor needed
+    // Place directly in world space -- no anchor needed
     sphere.position = Float3(fromPos.first, fromPos.second, fromPos.third)
     sv.addChildNode(sphere)
 

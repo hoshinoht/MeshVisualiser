@@ -14,10 +14,10 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.SnackbarResult
 import com.meshvisualiser.models.MeshState
+import com.meshvisualiser.models.PeerEvent
 import com.meshvisualiser.models.TransmissionMode
 import com.meshvisualiser.simulation.CsmaState
 import com.meshvisualiser.ui.MainViewModel
-import com.meshvisualiser.ui.PeerEvent
 import com.meshvisualiser.ui.components.*
 import com.meshvisualiser.ui.theme.*
 import kotlinx.coroutines.launch
@@ -25,33 +25,38 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
+    // ── Mesh state (ViewModel direct) ──
     val meshState by viewModel.meshState.collectAsStateWithLifecycle()
     val peers by viewModel.peers.collectAsStateWithLifecycle()
     val isLeader by viewModel.isLeader.collectAsStateWithLifecycle()
     val currentLeaderId by viewModel.currentLeaderId.collectAsStateWithLifecycle()
     val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
-    val dataLogs by viewModel.dataLogs.collectAsStateWithLifecycle()
-    val transferEvents by viewModel.transferEvents.collectAsStateWithLifecycle()
-    val showRawLog by viewModel.showRawLog.collectAsStateWithLifecycle()
-    val selectedPeerId by viewModel.selectedPeerId.collectAsStateWithLifecycle()
-    val peerRttHistory by viewModel.peerRttHistory.collectAsStateWithLifecycle()
-    val transmissionMode by viewModel.transmissionMode.collectAsStateWithLifecycle()
-    val csmaState by viewModel.csmaState.collectAsStateWithLifecycle()
-    val packetAnimEvents by viewModel.packetAnimEvents.collectAsStateWithLifecycle()
-    val isTcpBusy by viewModel.isTcpBusy.collectAsStateWithLifecycle()
     val displayName by viewModel.displayName.collectAsStateWithLifecycle()
-    val udpDropProbability by viewModel.udpDropProbability.collectAsStateWithLifecycle()
-    val tcpDropProbability by viewModel.tcpDropProbability.collectAsStateWithLifecycle()
-    val tcpAckTimeoutMs by viewModel.tcpAckTimeoutMs.collectAsStateWithLifecycle()
-    val showHints by viewModel.showHints.collectAsStateWithLifecycle()
-    val quizState by viewModel.quizState.collectAsStateWithLifecycle()
 
-    // AI state
-    val narratorEnabled by viewModel.narratorEnabled.collectAsStateWithLifecycle()
-    val narratorMessages by viewModel.narratorMessages.collectAsStateWithLifecycle()
-    val whatIfExchanges by viewModel.whatIfExchanges.collectAsStateWithLifecycle()
-    val whatIfLoading by viewModel.whatIfLoading.collectAsStateWithLifecycle()
-    val sessionSummary by viewModel.sessionSummary.collectAsStateWithLifecycle()
+    // ── Data exchange delegate ──
+    val dataLogs by viewModel.dataExchange.dataLogs.collectAsStateWithLifecycle()
+    val transferEvents by viewModel.dataExchange.transferEvents.collectAsStateWithLifecycle()
+    val showRawLog by viewModel.dataExchange.showRawLog.collectAsStateWithLifecycle()
+    val selectedPeerId by viewModel.dataExchange.selectedPeerId.collectAsStateWithLifecycle()
+    val peerRttHistory by viewModel.dataExchange.peerRttHistory.collectAsStateWithLifecycle()
+    val transmissionMode by viewModel.dataExchange.transmissionMode.collectAsStateWithLifecycle()
+    val csmaState by viewModel.dataExchange.csmaState.collectAsStateWithLifecycle()
+    val packetAnimEvents by viewModel.dataExchange.packetAnimEvents.collectAsStateWithLifecycle()
+    val isTcpBusy by viewModel.dataExchange.isTcpBusy.collectAsStateWithLifecycle()
+    val udpDropProbability by viewModel.dataExchange.udpDropProbability.collectAsStateWithLifecycle()
+    val tcpDropProbability by viewModel.dataExchange.tcpDropProbability.collectAsStateWithLifecycle()
+    val tcpAckTimeoutMs by viewModel.dataExchange.tcpAckTimeoutMs.collectAsStateWithLifecycle()
+    val showHints by viewModel.dataExchange.showHints.collectAsStateWithLifecycle()
+
+    // ── Quiz delegate ──
+    val quizState by viewModel.quiz.quizState.collectAsStateWithLifecycle()
+
+    // ── AI delegate ──
+    val narratorEnabled by viewModel.ai.narratorEnabled.collectAsStateWithLifecycle()
+    val narratorMessages by viewModel.ai.narratorMessages.collectAsStateWithLifecycle()
+    val whatIfExchanges by viewModel.ai.whatIfExchanges.collectAsStateWithLifecycle()
+    val whatIfLoading by viewModel.ai.whatIfLoading.collectAsStateWithLifecycle()
+    val sessionSummary by viewModel.ai.sessionSummary.collectAsStateWithLifecycle()
 
     val mainSnackbarHostState = remember { SnackbarHostState() }
 
@@ -80,7 +85,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     val validPeers by remember(peers) { derivedStateOf { peers.values.filter { it.hasValidPeerId } } }
     LaunchedEffect(validPeers.size, selectedPeerId) {
         if (validPeers.size == 1 && selectedPeerId == null) {
-            viewModel.selectPeer(validPeers.first().peerId)
+            viewModel.dataExchange.selectPeer(validPeers.first().peerId)
         }
     }
 
@@ -107,7 +112,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             peerRttHistory = peerRttHistory,
             dataLogs = dataLogs,
             packetAnimEvents = packetAnimEvents,
-            onEventConsumed = { viewModel.consumePacketEvent(it) }
+            onEventConsumed = { viewModel.dataExchange.consumePacketEvent(it) }
         )
 
         // Top: Status bar
@@ -162,18 +167,16 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                         narratorEnabled = narratorEnabled,
                         isLeader = isLeader,
                         onNavigateToAr = onNavigateToAr,
-                        onStartQuiz = { viewModel.startQuiz() },
-                        onToggleNarrator = { viewModel.toggleNarrator() },
+                        onStartQuiz = { viewModel.quiz.startQuiz() },
+                        onToggleNarrator = { viewModel.ai.toggleNarrator() },
                         onOpenWhatIf = { showWhatIfSheet = true },
                         onOpenDataLogs = { showDataSheet = true },
                         onOpenNetwork = { showNetworkSheet = true },
                         onOpenSummary = {
                             if (sessionSummary.content != null) {
-                                // Already generated — just show it
                                 showSessionSummary = true
                             } else if (!sessionSummary.isLoading) {
-                                // Fire the generation and let the user continue
-                                viewModel.generateSessionSummary()
+                                viewModel.ai.generateSessionSummary()
                                 snackbarScope.launch {
                                     mainSnackbarHostState.showSnackbar(
                                         "Generating summary in background...",
@@ -181,7 +184,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                                     )
                                 }
                             } else {
-                                // Already loading — just show the sheet with progress
                                 showSessionSummary = true
                             }
                         }
@@ -192,21 +194,21 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                 MeshControlBar(
                     peers = validPeers.toList(),
                     selectedPeerId = selectedPeerId,
-                    onSelectPeer = { viewModel.selectPeer(it) },
+                    onSelectPeer = { viewModel.dataExchange.selectPeer(it) },
                     transmissionMode = transmissionMode,
-                    onModeChanged = { viewModel.setTransmissionMode(it) },
-                    onSendTcp = { viewModel.sendTcpData() },
-                    onSendUdp = { viewModel.sendUdpData() },
+                    onModeChanged = { viewModel.dataExchange.setTransmissionMode(it) },
+                    onSendTcp = { viewModel.dataExchange.sendTcpData() },
+                    onSendUdp = { viewModel.dataExchange.sendUdpData() },
                     isTcpBusy = isTcpBusy
                 )
             }
         }
 
-        // Narrator overlay — rendered AFTER bottom controls so it layers on top
+        // Narrator overlay -- rendered AFTER bottom controls so it layers on top
         if (narratorEnabled && narratorMessages.isNotEmpty()) {
             NarratorOverlay(
                 messages = narratorMessages,
-                onDismiss = { viewModel.dismissNarratorMessage(it) },
+                onDismiss = { viewModel.ai.dismissNarratorMessage(it) },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 200.dp)
@@ -224,10 +226,10 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
         if (quizState.isActive) {
             QuizOverlay(
                 quizState = quizState,
-                onAnswer = { viewModel.answerQuiz(it) },
-                onNext = { viewModel.nextQuestion() },
-                onClose = { viewModel.closeQuiz() },
-                onReplay = { viewModel.startQuiz() }
+                onAnswer = { viewModel.quiz.answer(it) },
+                onNext = { viewModel.quiz.nextQuestion() },
+                onClose = { viewModel.quiz.close() },
+                onReplay = { viewModel.quiz.startQuiz() }
             )
         }
     }
@@ -243,9 +245,9 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                 dataLogs = dataLogs,
                 transferEvents = transferEvents,
                 showRawLog = showRawLog,
-                onToggleRawLog = { viewModel.toggleRawLog() },
+                onToggleRawLog = { viewModel.dataExchange.toggleRawLog() },
                 showHints = showHints,
-                onToggleHints = { viewModel.toggleHints() }
+                onToggleHints = { viewModel.dataExchange.toggleHints() }
             )
         }
     }
@@ -254,11 +256,11 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     if (showNetworkSheet) {
         NetworkConditionsSheet(
             udpDropProbability = udpDropProbability,
-            onUdpDropChanged = { viewModel.setUdpDropProbability(it) },
+            onUdpDropChanged = { viewModel.dataExchange.setUdpDropProbability(it) },
             tcpDropProbability = tcpDropProbability,
-            onTcpDropChanged = { viewModel.setTcpDropProbability(it) },
+            onTcpDropChanged = { viewModel.dataExchange.setTcpDropProbability(it) },
             tcpAckTimeoutMs = tcpAckTimeoutMs,
-            onTcpAckTimeoutChanged = { viewModel.setTcpAckTimeoutMs(it) },
+            onTcpAckTimeoutChanged = { viewModel.dataExchange.setTcpAckTimeoutMs(it) },
             isLeader = isLeader,
             onDismiss = { showNetworkSheet = false }
         )
@@ -269,7 +271,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
         WhatIfSheet(
             exchanges = whatIfExchanges,
             isLoading = whatIfLoading,
-            onAsk = { viewModel.askWhatIf(it) },
+            onAsk = { viewModel.ai.askWhatIf(it) },
             onDismiss = { showWhatIfSheet = false }
         )
     }
@@ -280,10 +282,10 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             summaryContent = sessionSummary.content,
             isLoading = sessionSummary.isLoading,
             error = sessionSummary.error,
-            onRegenerate = { viewModel.generateSessionSummary() },
+            onRegenerate = { viewModel.ai.generateSessionSummary() },
             onNewSession = {
                 showSessionSummary = false
-                viewModel.clearSessionSummary()
+                viewModel.ai.clearSessionSummary()
                 viewModel.leaveGroup()
             },
             onDismiss = { showSessionSummary = false }

@@ -1,6 +1,10 @@
 package com.meshvisualiser.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -248,154 +252,144 @@ fun MeshControlBar(
     isTcpBusy: Boolean,
     modifier: Modifier = Modifier
 ) {
-    // FlexibleBottomAppBar not in alpha14 → Surface with bottom insets
+    // Wizard step: false = pick peer, true = pick mode & send
+    val showSendStep = selectedPeerId != null
+    val selectedPeerName = peers.firstOrNull { it.peerId == selectedPeerId }
+        ?.let { it.deviceModel.ifEmpty { it.peerId.toString().takeLast(6) } }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 6.dp,
         shadowElevation = 0.dp
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(BottomAppBarDefaults.windowInsets)
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            // --- Peer selector row ---
-            Text(
-                text = "1. Send to",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (peers.isEmpty()) {
-                Text(
-                    text = "Waiting for peers...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-            } else {
-                LazyRow(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                    contentPadding = PaddingValues(horizontal = 0.dp)
-                ) {
-                    items(
-                        items = peers,
-                        key = { it.peerId }
-                    ) { peer ->
-                        val isSelected = peer.peerId == selectedPeerId
+            AnimatedContent(
+                targetState = showSendStep,
+                transitionSpec = {
+                    slideInVertically { it } togetherWith slideOutVertically { -it }
+                },
+                label = "controlBarWizard"
+            ) { isSendStep ->
+                if (!isSendStep) {
+                    // ── Step 1: Pick a peer ──
+                    if (peers.isEmpty()) {
+                        Text(
+                            text = "Waiting for peers...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(items = peers, key = { it.peerId }) { peer ->
+                                InputChip(
+                                    selected = false,
+                                    onClick = { onSelectPeer(peer.peerId) },
+                                    label = {
+                                        Text(
+                                            text = peer.deviceModel.ifEmpty {
+                                                peer.peerId.toString().takeLast(6)
+                                            },
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // ── Step 2: Mode + Send ──
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Back chip showing selected peer — tap to go back
                         InputChip(
-                            selected = isSelected,
-                            onClick = {
-                                onSelectPeer(if (isSelected) null else peer.peerId)
-                            },
+                            selected = true,
+                            onClick = { onSelectPeer(null) },
                             label = {
                                 Text(
-                                    text = peer.deviceModel.ifEmpty {
-                                        peer.peerId.toString().takeLast(6)
-                                    },
+                                    text = selectedPeerName ?: "",
                                     style = MaterialTheme.typography.labelSmall
                                 )
+                            },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Change peer",
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        )
+
+                        // Mode toggle
+                        @Suppress("DEPRECATION")
+                        ButtonGroup(modifier = Modifier.weight(1f)) {
+                            ToggleButton(
+                                checked = transmissionMode == TransmissionMode.DIRECT,
+                                onCheckedChange = { if (it) onModeChanged(TransmissionMode.DIRECT) }
+                            ) {
+                                Text("Direct", style = MaterialTheme.typography.labelSmall)
+                            }
+                            ToggleButton(
+                                checked = transmissionMode == TransmissionMode.CSMA_CD,
+                                onCheckedChange = { if (it) onModeChanged(TransmissionMode.CSMA_CD) }
+                            ) {
+                                Text("CSMA/CD", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+
+                        // Send buttons
+                        SplitButtonLayout(
+                            leadingButton = {
+                                FilledTonalButton(
+                                    onClick = onSendTcp,
+                                    enabled = !isTcpBusy,
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                ) {
+                                    if (isTcpBusy) {
+                                        LoadingIndicator(modifier = Modifier.size(16.dp))
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.Send,
+                                            contentDescription = "Send TCP",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                            },
+                            trailingButton = {
+                                FilledTonalButton(
+                                    onClick = onSendUdp,
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Send UDP",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                }
                             }
                         )
                     }
                 }
-                if (selectedPeerId == null) {
-                    Text(
-                        text = "Tap a peer to select them as the target",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // --- Mode toggle + Send buttons ---
-            Text(
-                text = "2. Send as",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .alpha(if (selectedPeerId != null) 1f else 0.38f),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // ButtonGroup: Direct | CSMA/CD
-                @Suppress("DEPRECATION")
-                ButtonGroup(modifier = Modifier.weight(0.55f)) {
-                    ToggleButton(
-                        checked = transmissionMode == TransmissionMode.DIRECT,
-                        onCheckedChange = { if (it) onModeChanged(TransmissionMode.DIRECT) }
-                    ) {
-                        Text("Direct", style = MaterialTheme.typography.labelSmall)
-                    }
-                    ToggleButton(
-                        checked = transmissionMode == TransmissionMode.CSMA_CD,
-                        onCheckedChange = { if (it) onModeChanged(TransmissionMode.CSMA_CD) }
-                    ) {
-                        Text("CSMA/CD", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-
-                // SplitButtonLayout: TCP (leading) | UDP (trailing)
-                SplitButtonLayout(
-                    modifier = Modifier.weight(0.45f),
-                    leadingButton = {
-                        FilledTonalButton(
-                            onClick = onSendTcp,
-                            enabled = selectedPeerId != null && !isTcpBusy,
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer
-                            ),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            if (isTcpBusy) {
-                                LoadingIndicator(modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                            } else {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                            }
-                            Text(
-                                text = "TCP",
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    },
-                    trailingButton = {
-                        FilledTonalButton(
-                            onClick = onSendUdp,
-                            enabled = selectedPeerId != null,
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                            ),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "UDP",
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    }
-                )
             }
         }
     }
