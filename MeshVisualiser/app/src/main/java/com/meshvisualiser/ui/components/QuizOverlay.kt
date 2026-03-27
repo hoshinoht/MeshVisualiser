@@ -53,28 +53,51 @@ fun QuizOverlay(
             shape = MaterialTheme.shapes.extraLarge,
             elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp)
         ) {
-            if (quizState.isFinished) {
-                // Final score screen
-                FinalScoreScreen(quizState, onClose, onReplay)
-            } else {
-                quizState.currentQuestion?.let { question ->
-                    QuestionScreen(
-                        questionIndex = quizState.currentIndex,
-                        totalQuestions = quizState.questions.size,
-                        questionText = question.text,
-                        options = question.options,
-                        correctIndex = question.correctIndex,
-                        selectedAnswer = quizState.selectedAnswer,
-                        isRevealed = quizState.isAnswerRevealed,
-                        score = quizState.score,
-                        timerSeconds = quizState.timerSecondsRemaining,
-                        onAnswer = onAnswer,
-                        onNext = onNext,
-                        onClose = onClose
-                    )
+            when {
+                quizState.isLoading -> {
+                    LoadingScreen()
+                }
+                quizState.isFinished -> {
+                    FinalScoreScreen(quizState, onClose, onReplay)
+                }
+                else -> {
+                    quizState.currentQuestion?.let { question ->
+                        QuestionScreen(
+                            questionIndex = quizState.currentIndex,
+                            totalQuestions = quizState.questions.size,
+                            questionText = question.text,
+                            options = question.options,
+                            correctIndex = question.correctIndex,
+                            selectedAnswer = quizState.selectedAnswer,
+                            isRevealed = quizState.isAnswerRevealed,
+                            explanation = question.explanation,
+                            score = quizState.score,
+                            timerSeconds = quizState.timerSecondsRemaining,
+                            onAnswer = onAnswer,
+                            onNext = onNext,
+                            onClose = onClose
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun LoadingScreen() {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        LoadingIndicator(modifier = Modifier.size(48.dp))
+        Text(
+            text = "Generating quiz...",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -88,6 +111,7 @@ private fun QuestionScreen(
     correctIndex: Int,
     selectedAnswer: Int?,
     isRevealed: Boolean,
+    explanation: String,
     score: Int,
     timerSeconds: Int,
     onAnswer: (Int) -> Unit,
@@ -258,6 +282,23 @@ private fun QuestionScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // Explanation card (shown after answering)
+        if (isRevealed && explanation.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = explanation,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(12.dp)
+                )
             }
         }
 

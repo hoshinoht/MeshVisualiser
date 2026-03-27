@@ -99,6 +99,28 @@ class AiClient(
     ): Result<SummaryResponse> =
         post("/ai/summary", SummaryRequest(meshStateContext, quizScore, quizTotal), SummaryResponse::class.java)
 
+    // ── Quiz ──
+
+    data class QuizRequest(
+        @SerializedName("mesh_state") val meshState: String
+    )
+
+    data class QuizQuestionDto(
+        val text: String?,
+        val options: List<String>?,
+        val correct: Int?,
+        val category: String?,
+        val explanation: String?
+    )
+
+    data class QuizResponseDto(
+        val questions: List<QuizQuestionDto>?,
+        val source: String?
+    )
+
+    suspend fun quiz(meshStateContext: String): Result<QuizResponseDto> =
+        post("/ai/quiz", QuizRequest(meshStateContext), QuizResponseDto::class.java)
+
     // ── LLM Config (on the backend) ──
 
     data class LlmConfigResponse(

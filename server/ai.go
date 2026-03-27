@@ -45,6 +45,28 @@ Generate a personalized learning summary that:
 Reference their actual data. Be encouraging but educational.
 Format with clear sections and bullet points. Keep it under 300 words.`
 
+const quizSystemPrompt = `You are a networking quiz generator for a mesh networking education app.
+The student has a live peer-to-peer mesh network. Use their ACTUAL session data to generate
+personalised multiple-choice questions that test their understanding of what is happening.
+
+Generate exactly 10 questions as a JSON array. Mix these categories:
+- SESSION questions (3-4): Ask about their specific mesh state — topology type, peer count,
+  leader identity, RTT values, packet loss rates, collision counts, protocols used.
+  Use the real numbers from their session.
+- CONCEPT questions (4-5): Ask about networking concepts relevant to what they've experienced.
+  For example, if they had collisions, ask about CSMA/CD. If they used TCP, ask about
+  acknowledgments and retransmission. If they have a star topology, ask about its properties.
+- SCENARIO questions (2-3): "What would happen if..." questions based on their current state.
+  E.g. "If your TCP packet loss increased from 10% to 50%, what would you observe?"
+
+Each question MUST have exactly 4 options with exactly 1 correct answer.
+Each question MUST include a short explanation (1-2 sentences) of why the correct answer is right.
+
+Respond with ONLY a JSON array, no markdown fences, no extra text. Each element:
+{"text":"question text","options":["A","B","C","D"],"correct":0,"category":"SESSION|CONCEPT|SCENARIO","explanation":"Why the answer is correct"}
+
+where "correct" is the 0-based index of the correct option.`
+
 // Request/response types for AI endpoints.
 
 type NarrateRequest struct {
@@ -70,6 +92,23 @@ type WhatIfEntry struct {
 
 type WhatIfResponse struct {
 	Answer string `json:"answer"`
+}
+
+type QuizRequest struct {
+	MeshState string `json:"mesh_state"`
+}
+
+type QuizQuestion struct {
+	Text        string   `json:"text"`
+	Options     []string `json:"options"`
+	Correct     int      `json:"correct"`
+	Category    string   `json:"category"`
+	Explanation string   `json:"explanation"`
+}
+
+type QuizResponse struct {
+	Questions []QuizQuestion `json:"questions"`
+	Source    string         `json:"source"` // "ai" or "static"
 }
 
 type SummaryRequest struct {
@@ -285,6 +324,49 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 		resp := SummaryResponse{Summary: content}
 		summaryCache.Set(req, resp)
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	// POST /ai/quiz — LLM-generated session-aware quiz, static fallback
+	mux.HandleFunc("POST /ai/quiz", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
+		var req QuizRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+
+		// Try LLM first
+		userPrompt := "Here is the student's current mesh network session data:\n" + req.MeshState
+		content, err := callLLM(cfg, []chatMessage{
+			{Role: "system", Content: quizSystemPrompt},
+			{Role: "user", Content: userPrompt},
+		}, 2000)
+
+		if err == nil {
+			var questions []QuizQuestion
+			if parseErr := json.Unmarshal([]byte(content), &questions); parseErr == nil {
+				valid := make([]QuizQuestion, 0, len(questions))
+				for _, q := range questions {
+					if len(q.Options) == 4 && q.Correct >= 0 && q.Correct < 4 && q.Text != "" {
+						valid = append(valid, q)
+					}
+				}
+				if len(valid) >= 5 {
+					log.Printf("quiz: LLM generated %d valid questions", len(valid))
+					writeJSON(w, http.StatusOK, QuizResponse{Questions: valid, Source: "ai"})
+					return
+				}
+				log.Printf("quiz: LLM produced only %d valid questions, falling back to static", len(valid))
+			} else {
+				log.Printf("quiz: LLM parse error: %v", parseErr)
+			}
+		} else {
+			log.Printf("quiz: LLM error: %v, falling back to static", err)
+		}
+
+		// Fallback: static question pool
+		picked := pickStaticQuestions(10)
+		writeJSON(w, http.StatusOK, QuizResponse{Questions: picked, Source: "static"})
 	})
 
 	// POST /ai/test

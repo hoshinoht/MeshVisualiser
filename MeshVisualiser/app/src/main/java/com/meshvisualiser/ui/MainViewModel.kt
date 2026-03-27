@@ -188,6 +188,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         peers = { _peers.value },
         currentLeaderId = { _currentLeaderId.value },
         peerRttHistory = { dataExchange.peerRttHistory.value },
+        aiClient = aiClient,
+        captureSnapshot = ::captureSnapshot,
     )
 
     val ai = AiDelegate(
