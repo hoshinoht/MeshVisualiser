@@ -7,7 +7,17 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"time"
 )
+
+// extendWriteDeadline pushes the HTTP write deadline out for slow LLM responses.
+// Falls back silently if the ResponseWriter doesn't support it.
+func extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Now().Add(d)); err != nil {
+		log.Printf("warning: could not extend write deadline: %v", err)
+	}
+}
 
 // System prompts.
 
@@ -218,6 +228,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/narrate
 	mux.HandleFunc("POST /ai/narrate", func(w http.ResponseWriter, r *http.Request) {
+		extendWriteDeadline(w, 90*time.Second)
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req NarrateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -255,6 +266,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/what-if
 	mux.HandleFunc("POST /ai/what-if", func(w http.ResponseWriter, r *http.Request) {
+		extendWriteDeadline(w, 90*time.Second)
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req WhatIfRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -291,6 +303,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/summary (cached)
 	mux.HandleFunc("POST /ai/summary", func(w http.ResponseWriter, r *http.Request) {
+		extendWriteDeadline(w, 90*time.Second)
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req SummaryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -328,6 +341,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/quiz — LLM-generated session-aware quiz, static fallback
 	mux.HandleFunc("POST /ai/quiz", func(w http.ResponseWriter, r *http.Request) {
+		extendWriteDeadline(w, 90*time.Second)
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req QuizRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -371,6 +385,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/test
 	mux.HandleFunc("POST /ai/test", func(w http.ResponseWriter, r *http.Request) {
+		extendWriteDeadline(w, 90*time.Second)
 		content, err := callLLM(cfg, []chatMessage{
 			{Role: "user", Content: "Say 'OK' if you can hear me."},
 		}, 10)

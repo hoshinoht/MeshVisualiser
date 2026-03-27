@@ -24,7 +24,7 @@ class AiClient(
     companion object {
         private const val TAG = "AiClient"
         const val DEFAULT_SERVER_URL = "https://mesh.hoshinoht.dev"
-        private const val TIMEOUT_SECONDS = 60L
+        private const val TIMEOUT_SECONDS = 90L
         private const val MAX_BODY_BYTES = 64 * 1024
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
