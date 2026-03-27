@@ -50,7 +50,7 @@ fun StatusOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -100,8 +100,10 @@ fun StatusOverlay(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
-            MeshFormationStepper(currentState = meshState)
+            if (meshState != MeshState.CONNECTED) {
+                Spacer(modifier = Modifier.height(2.dp))
+                MeshFormationStepper(currentState = meshState)
+            }
         }
     }
 }

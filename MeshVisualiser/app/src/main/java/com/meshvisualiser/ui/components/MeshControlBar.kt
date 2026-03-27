@@ -259,8 +259,8 @@ fun MeshControlBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(BottomAppBarDefaults.windowInsets)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             // --- Peer selector row ---
             Text(
@@ -277,7 +277,7 @@ fun MeshControlBar(
                 )
             } else {
                 LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                     contentPadding = PaddingValues(horizontal = 0.dp)
                 ) {
@@ -381,6 +381,13 @@ fun MeshControlBar(
                             ),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                         ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "UDP",
                                 color = MaterialTheme.colorScheme.onTertiaryContainer,
