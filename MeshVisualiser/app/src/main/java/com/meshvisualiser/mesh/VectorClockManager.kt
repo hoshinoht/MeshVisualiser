@@ -34,8 +34,19 @@ class VectorClockManager(private val localId: Long) {
     /** Emitted on every clock tick — used by the visualization to flash the chip. */
     data class ClockTickEvent(val nodeId: Long, val kind: VcEventKind)
 
+    /** Emitted on receive — the causality verdict between the received clock and local clock before merge. */
+    data class CausalityEvent(
+        val fromId: Long,
+        val toId: Long,
+        val relation: CausalRelation,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
     private val _clockTicks = MutableSharedFlow<ClockTickEvent>(extraBufferCapacity = 20)
     val clockTicks: SharedFlow<ClockTickEvent> = _clockTicks.asSharedFlow()
+
+    private val _causalityEvents = MutableSharedFlow<CausalityEvent>(extraBufferCapacity = 20)
+    val causalityEvents: SharedFlow<CausalityEvent> = _causalityEvents.asSharedFlow()
 
     private var nextEventId = 1L
 
@@ -58,6 +69,9 @@ class VectorClockManager(private val localId: Long) {
      */
     fun onReceive(senderId: Long, receivedMap: Map<Long, Int>, description: String = "") {
         val received = VectorClock(receivedMap)
+        // Compare BEFORE merge to determine causality
+        val relation = _localClock.value.compareTo(received)
+        _causalityEvents.tryEmit(CausalityEvent(senderId, localId, relation))
         val newClock = _localClock.value.mergeAndIncrement(localId, received)
         _localClock.value = newClock
         _peerClocks.update { it + (senderId to received) }

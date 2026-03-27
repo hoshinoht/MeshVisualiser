@@ -82,6 +82,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     var showNetworkSheet by remember { mutableStateOf(false) }
     var showWhatIfSheet by remember { mutableStateOf(false) }
     var showSessionSummary by remember { mutableStateOf(false) }
+    var showVectorClock by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Auto-select peer when only one valid peer exists
@@ -116,6 +117,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             localVectorClock = localVectorClock.entries,
             peerVectorClocks = peerVectorClocks.mapValues { it.value.entries },
             clockTicks = viewModel.vectorClockManager.clockTicks,
+            causalityEvents = viewModel.vectorClockManager.causalityEvents,
             peerRttHistory = peerRttHistory,
             dataLogs = dataLogs,
             packetAnimEvents = packetAnimEvents,
@@ -192,7 +194,8 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                                 showSessionSummary = true
                             }
                         },
-                        onSendVcProbe = { viewModel.sendVcProbe() }
+                        onSendVcProbe = { viewModel.sendVcProbe() },
+                        onOpenVectorClock = { showVectorClock = true }
                     )
                 }
 
@@ -298,4 +301,16 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
         )
     }
 
+    // Vector Clock Inspector
+    if (showVectorClock) {
+        val vcEventLog by viewModel.vectorClockManager.eventLog.collectAsStateWithLifecycle()
+        VectorClockInspector(
+            localId = viewModel.localId,
+            localClock = localVectorClock,
+            peerClocks = peerVectorClocks,
+            eventLog = vcEventLog,
+            peers = peers,
+            onDismiss = { showVectorClock = false }
+        )
+    }
 }

@@ -81,6 +81,7 @@ fun MeshFabMenu(
     onOpenNetwork: () -> Unit,
     onOpenSummary: () -> Unit,
     onSendVcProbe: () -> Unit = {},
+    onOpenVectorClock: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -213,6 +214,14 @@ fun MeshFabMenu(
                 },
                 icon = { Icon(Icons.Default.Summarize, contentDescription = null, modifier = Modifier.size(20.dp)) },
                 text = { Text("Summary", style = MaterialTheme.typography.labelMedium) }
+            )
+            FloatingActionButtonMenuItem(
+                onClick = {
+                    menuExpanded = false
+                    onOpenVectorClock()
+                },
+                icon = { Icon(Icons.Default.MoreVert, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text("Vector Clock", style = MaterialTheme.typography.labelMedium) }
             )
             FloatingActionButtonMenuItem(
                 onClick = {

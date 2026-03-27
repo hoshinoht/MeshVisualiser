@@ -36,6 +36,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val PACKET_TRAVEL_MS = 1500  // deliberately slow for educational visibility
@@ -65,6 +66,7 @@ fun MeshVisualizationView(
     localVectorClock: Map<Long, Int> = emptyMap(),
     peerVectorClocks: Map<Long, Map<Long, Int>> = emptyMap(),
     clockTicks: kotlinx.coroutines.flow.SharedFlow<com.meshvisualiser.mesh.VectorClockManager.ClockTickEvent>? = null,
+    causalityEvents: kotlinx.coroutines.flow.SharedFlow<com.meshvisualiser.mesh.VectorClockManager.CausalityEvent>? = null,
     peerRttHistory: Map<Long, List<Long>>,
     dataLogs: List<DataLogEntry>,
     packetAnimEvents: List<PacketAnimEvent>,
@@ -181,6 +183,30 @@ fun MeshVisualizationView(
             scope.launch {
                 pulse.snapTo(1f)
                 pulse.animateTo(0f, spatialSpec)
+            }
+        }
+    }
+
+    // --- Causal annotations on edges (arrows + concurrent badges) ---
+    data class CausalAnnotation(
+        val fromId: Long, val toId: Long,
+        val relation: com.meshvisualiser.mesh.CausalRelation,
+        val alpha: Animatable<Float, AnimationVector1D>
+    )
+    val causalAnnotations = remember { mutableStateListOf<CausalAnnotation>() }
+
+    LaunchedEffect(causalityEvents) {
+        causalityEvents?.collect { event ->
+            // Only show annotations for non-identical relations
+            if (event.relation == com.meshvisualiser.mesh.CausalRelation.IDENTICAL) return@collect
+            // Limit to 5 visible annotations to avoid clutter
+            if (causalAnnotations.size >= 5) causalAnnotations.removeAt(0)
+            val annotation = CausalAnnotation(event.fromId, event.toId, event.relation, Animatable(1f))
+            causalAnnotations.add(annotation)
+            scope.launch {
+                delay(3000) // visible for 3 seconds
+                annotation.alpha.animateTo(0f, tween(500))
+                causalAnnotations.remove(annotation)
             }
         }
     }
@@ -835,6 +861,74 @@ fun MeshVisualizationView(
                     pos.y - packetGlowRadius - 6f,
                     packetLabelPaint
                 )
+            }
+        }
+
+        // ============================
+        // 6. CAUSAL ANNOTATIONS (arrows + concurrent badges)
+        // ============================
+        causalAnnotations.forEach { ann ->
+            val fromPos = nodePositions[ann.fromId] ?: return@forEach
+            val toPos = nodePositions[ann.toId] ?: return@forEach
+            val alpha = ann.alpha.value
+
+            when (ann.relation) {
+                com.meshvisualiser.mesh.CausalRelation.HAPPENED_BEFORE,
+                com.meshvisualiser.mesh.CausalRelation.HAPPENED_AFTER -> {
+                    // Arrowhead at 85% toward destination
+                    val (src, dst) = if (ann.relation == com.meshvisualiser.mesh.CausalRelation.HAPPENED_BEFORE)
+                        fromPos to toPos else toPos to fromPos
+                    val t = 0.85f
+                    val tipX = lerp(src.x, dst.x, t)
+                    val tipY = lerp(src.y, dst.y, t)
+                    val dx = dst.x - src.x
+                    val dy = dst.y - src.y
+                    val len = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                    val ux = dx / len
+                    val uy = dy / len
+                    // Perpendicular
+                    val px = -uy
+                    val py = ux
+                    val arrowLen = 12f
+                    val arrowBase = 8f
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(tipX, tipY)
+                        lineTo(tipX - ux * arrowLen + px * arrowBase / 2f, tipY - uy * arrowLen + py * arrowBase / 2f)
+                        lineTo(tipX - ux * arrowLen - px * arrowBase / 2f, tipY - uy * arrowLen - py * arrowBase / 2f)
+                        close()
+                    }
+                    drawPath(path, color = primaryColor.copy(alpha = 0.6f * alpha))
+                }
+                com.meshvisualiser.mesh.CausalRelation.CONCURRENT -> {
+                    // Concurrent badge at midpoint
+                    val midX = (fromPos.x + toPos.x) / 2f
+                    val midY = (fromPos.y + toPos.y) / 2f
+                    val pillW = 36f
+                    val pillH = 20f
+                    drawRoundRect(
+                        color = ElectionMsg.copy(alpha = 0.25f * alpha),
+                        topLeft = Offset(midX - pillW / 2f, midY - pillH / 2f),
+                        size = androidx.compose.ui.geometry.Size(pillW, pillH),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f)
+                    )
+                    drawRoundRect(
+                        color = ElectionMsg.copy(alpha = 0.6f * alpha),
+                        topLeft = Offset(midX - pillW / 2f, midY - pillH / 2f),
+                        size = androidx.compose.ui.geometry.Size(pillW, pillH),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f),
+                        style = Stroke(width = 1.5f)
+                    )
+                    // "∥" symbol
+                    rttPaint.textSize = 16f
+                    rttPaint.color = ElectionMsg.copy(alpha = alpha).toArgb()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "\u2225", // ∥ parallel symbol
+                        midX,
+                        midY + 5f,
+                        rttPaint
+                    )
+                }
+                else -> {} // IDENTICAL — no annotation
             }
         }
 
