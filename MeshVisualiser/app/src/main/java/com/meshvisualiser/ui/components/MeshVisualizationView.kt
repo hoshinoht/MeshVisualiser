@@ -62,6 +62,8 @@ fun MeshVisualizationView(
     peers: Map<String, PeerInfo>,
     leaderId: Long,
     electionTerm: Int = 0,
+    localVectorClock: Map<Long, Int> = emptyMap(),
+    peerVectorClocks: Map<Long, Map<Long, Int>> = emptyMap(),
     peerRttHistory: Map<Long, List<Long>>,
     dataLogs: List<DataLogEntry>,
     packetAnimEvents: List<PacketAnimEvent>,
@@ -669,6 +671,40 @@ fun MeshVisualizationView(
                         pos.x,
                         pos.y + scaledRadius + 80f,
                         rolePaint
+                    )
+                }
+
+                // Vector clock chip
+                val nodeClock = if (nodeId == localId) localVectorClock
+                    else peerVectorClocks[nodeId]
+                if (nodeClock != null && nodeClock.isNotEmpty()) {
+                    val clockStr = nodeClock.toSortedMap().values.joinToString("\u00B7") // middle dot
+                    val chipY = pos.y + scaledRadius + (if (isLeaderNode && electionTerm > 0) 98f else 78f)
+                    val chipWidth = (clockStr.length * 11f + 16f).coerceIn(60f, 140f)
+                    val chipHeight = 24f
+
+                    // Chip background
+                    drawRoundRect(
+                        color = surfaceColor.copy(alpha = 0.7f * scale),
+                        topLeft = Offset(pos.x - chipWidth / 2f, chipY - chipHeight / 2f),
+                        size = androidx.compose.ui.geometry.Size(chipWidth, chipHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f)
+                    )
+                    // Chip border
+                    drawRoundRect(
+                        color = nodeColor.copy(alpha = 0.4f * scale),
+                        topLeft = Offset(pos.x - chipWidth / 2f, chipY - chipHeight / 2f),
+                        size = androidx.compose.ui.geometry.Size(chipWidth, chipHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f),
+                        style = Stroke(width = 1.5f)
+                    )
+                    // Clock text
+                    rttPaint.textSize = 20f
+                    drawContext.canvas.nativeCanvas.drawText(
+                        clockStr,
+                        pos.x,
+                        chipY + 6f,
+                        rttPaint
                     )
                 }
             }

@@ -16,7 +16,12 @@ data class PoseData(
 )
 
 /** Serializable message exchanged between peers in the mesh network. */
-data class MeshMessage(val type: Int, val senderId: Long, val data: String = "") {
+data class MeshMessage(
+    val type: Int,
+    val senderId: Long,
+    val data: String = "",
+    val vc: Map<Long, Int>? = null
+) {
     companion object {
         private val gson = Gson()
         private const val MAX_PAYLOAD_BYTES = 4096
@@ -75,6 +80,14 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
         fun animEvent(localId: Long, fromId: Long, toId: Long, type: String): MeshMessage {
             return MeshMessage(MessageType.ANIM_EVENT.value, localId, "$fromId:$toId:$type")
         }
+
+        /** Attach a vector clock to any message. */
+        fun withVc(message: MeshMessage, clock: Map<Long, Int>): MeshMessage =
+            message.copy(vc = clock)
+
+        /** Educational probe to advance vector clocks between peers. */
+        fun vcProbe(localId: Long, clock: Map<Long, Int>): MeshMessage =
+            MeshMessage(MessageType.VC_PROBE.value, localId, "", clock)
 
         fun poseUpdate(
             localId: Long,

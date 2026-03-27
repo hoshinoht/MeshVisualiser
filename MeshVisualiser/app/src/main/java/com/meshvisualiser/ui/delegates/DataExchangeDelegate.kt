@@ -37,6 +37,7 @@ class DataExchangeDelegate(
     private val isLeaderFn: () -> Boolean,
     private val nearbyManager: () -> NearbyConnectionsManager?,
     private val isInitialized: () -> Boolean,
+    private val vcManager: (() -> com.meshvisualiser.mesh.VectorClockManager)? = null,
 ) {
     companion object {
         private const val TAG = "DataExchangeDelegate"
@@ -190,7 +191,10 @@ class DataExchangeDelegate(
     private fun doSendTcp(peer: PeerInfo, targetId: Long, payload: String, seq: Int) {
         val nm = nearbyManager() ?: return
         if (!isInitialized()) return
-        val message = MeshMessage.dataTcp(localId, payload, seq)
+        val vcMap = vcManager?.invoke()?.onSend(targetId, "TCP #$seq → ${peer.deviceModel}")
+        val message = MeshMessage.dataTcp(localId, payload, seq).let {
+            if (vcMap != null) MeshMessage.withVc(it, vcMap) else it
+        }
         val eventId = nextTransferEventId++
         seqToTransferEventId[seq] = eventId
 
@@ -254,7 +258,10 @@ class DataExchangeDelegate(
     private fun doSendUdp(peer: PeerInfo, targetId: Long, payload: String) {
         val nm = nearbyManager() ?: return
         if (!isInitialized()) return
-        val message = MeshMessage.dataUdp(localId, payload)
+        val vcMap = vcManager?.invoke()?.onSend(targetId, "UDP → ${peer.deviceModel}")
+        val message = MeshMessage.dataUdp(localId, payload).let {
+            if (vcMap != null) MeshMessage.withVc(it, vcMap) else it
+        }
         nm.sendMessage(peer.endpointId, message)
         addLog("OUT", "UDP", targetId, peer.deviceModel, payload, message.toBytes().size)
         addTransferEvent(TransferEvent(

@@ -34,7 +34,10 @@ enum class MessageType(val value: Int) {
     /** Sync simulation config (UDP/TCP drop %, TCP ACK timeout) to all peers */
     CONFIG_SYNC(9),
 
-    ANIM_EVENT(10);
+    ANIM_EVENT(10),
+
+    /** Vector clock probe — sent purely to advance logical clocks for educational demo */
+    VC_PROBE(11);
 
     companion object {
         fun fromValue(value: Int): MessageType? = entries.find { it.value == value }

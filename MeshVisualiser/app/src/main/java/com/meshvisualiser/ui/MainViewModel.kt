@@ -12,6 +12,7 @@ import com.meshvisualiser.ai.PeerSummary
 import com.meshvisualiser.ai.ProtocolNarrator
 import com.meshvisualiser.data.UserPreferencesRepository
 import com.meshvisualiser.mesh.MeshManager
+import com.meshvisualiser.mesh.VectorClockManager
 import com.meshvisualiser.models.ConnectionFlowState
 import com.meshvisualiser.models.MeshMessage
 import com.meshvisualiser.models.MeshState
@@ -123,6 +124,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ── Vector Clock ──
+
+    val vectorClockManager = VectorClockManager(localId)
+
     // ── Managers (initialized on joinGroup) ──
 
     private lateinit var nearbyManager: NearbyConnectionsManager
@@ -205,6 +210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         isLeaderFn = { _isLeader.value },
         nearbyManager = { if (isInitialized) nearbyManager else null },
         isInitialized = { isInitialized },
+        vcManager = { vectorClockManager },
     )
 
     val quiz = QuizDelegate(
@@ -486,7 +492,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             serviceId = serviceId,
             displayName = nameForPeers,
             onMessageReceived = { endpointId, message ->
-                when (message.getMessageType()) {
+                // Vector clock: merge on receive for all types except hot path
+                val msgType = message.getMessageType()
+                if (message.vc != null && msgType != MessageType.POSE_UPDATE && msgType != MessageType.ANIM_EVENT) {
+                    vectorClockManager.onReceive(
+                        message.senderId, message.vc,
+                        "${msgType?.name ?: "?"} from ${message.senderId.toString().takeLast(4)}"
+                    )
+                }
+
+                when (msgType) {
                     MessageType.DATA_TCP, MessageType.DATA_UDP ->
                         dataExchange.onDataReceived(endpointId, message)
                     MessageType.START_MESH ->
@@ -499,6 +514,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     MessageType.ANIM_EVENT ->
                         dataExchange.onAnimEventReceived(message)
+                    MessageType.VC_PROBE -> { /* Already handled by VC merge above */ }
                     else ->
                         meshManager.onMessageReceived(endpointId, message)
                 }

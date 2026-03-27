@@ -34,7 +34,7 @@ class MessageTypeTest {
 
     @Test
     fun `value assignments match spec 0 through 9`() {
-        val expected = (0..10).toList()
+        val expected = (0..11).toList()
         val actual = MessageType.entries.map { it.value }.sorted()
         assertEquals(expected, actual)
     }
