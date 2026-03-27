@@ -490,15 +490,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     // Detect new peers that completed handshake after mesh started —
-                    // send them START_MESH so they auto-join (fixes "must wait for all peers" bug)
+                    // send them START_MESH so they auto-join, then fast-path the leader info
                     for ((peerId, info) in newValidIds) {
                         if (peerId !in oldValidIds) {
                             val name = info.deviceModel.ifBlank { info.displayName.ifBlank { peerId.toString().takeLast(4) } }
                             Log.d(TAG, "Late peer joined mesh: $name ($peerId), sending START_MESH")
                             _peerEvents.tryEmit(PeerEvent.PeerJoined(name))
                             nearbyManager.sendMessage(info.endpointId, MeshMessage.startMesh(localId))
-                            // Trigger re-election to include the new peer
-                            meshManager.startElection()
+
+                            if (_isLeader.value) {
+                                // Fast path: we're the leader — send COORDINATOR directly,
+                                // no need for a full election round-trip
+                                Log.d(TAG, "Fast-path: sending COORDINATOR to late joiner $peerId")
+                                nearbyManager.sendMessage(info.endpointId, MeshMessage.coordinator(localId, ""))
+                            } else if (_currentLeaderId.value > 0) {
+                                // We know the leader — let the late peer discover it via election
+                                // (the leader's handleHandshake already re-sends COORDINATOR)
+                                Log.d(TAG, "Leader is ${_currentLeaderId.value}, late peer will receive COORDINATOR via handshake")
+                            } else {
+                                // No leader established yet — need a full election
+                                meshManager.startElection()
+                            }
                         }
                     }
                 }
