@@ -1,8 +1,11 @@
 package com.meshvisualiser.mesh
 
 import android.util.Log
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
@@ -28,6 +31,12 @@ class VectorClockManager(private val localId: Long) {
     private val _eventLog = MutableStateFlow<List<VectorClockEvent>>(emptyList())
     val eventLog: StateFlow<List<VectorClockEvent>> = _eventLog.asStateFlow()
 
+    /** Emitted on every clock tick — used by the visualization to flash the chip. */
+    data class ClockTickEvent(val nodeId: Long, val kind: VcEventKind)
+
+    private val _clockTicks = MutableSharedFlow<ClockTickEvent>(extraBufferCapacity = 20)
+    val clockTicks: SharedFlow<ClockTickEvent> = _clockTicks.asSharedFlow()
+
     private var nextEventId = 1L
 
     /**
@@ -38,6 +47,7 @@ class VectorClockManager(private val localId: Long) {
         val newClock = _localClock.value.increment(localId)
         _localClock.value = newClock
         appendEvent(VcEventKind.SEND, targetId, description, newClock)
+        _clockTicks.tryEmit(ClockTickEvent(localId, VcEventKind.SEND))
         Log.d(TAG, "SEND → $targetId: ${newClock.toCompactString()}")
         return newClock.toMap()
     }
@@ -52,6 +62,7 @@ class VectorClockManager(private val localId: Long) {
         _localClock.value = newClock
         _peerClocks.update { it + (senderId to received) }
         appendEvent(VcEventKind.RECEIVE, senderId, description, newClock)
+        _clockTicks.tryEmit(ClockTickEvent(localId, VcEventKind.RECEIVE))
         Log.d(TAG, "RECV ← $senderId: ${newClock.toCompactString()}")
     }
 
@@ -62,6 +73,7 @@ class VectorClockManager(private val localId: Long) {
         val newClock = _localClock.value.increment(localId)
         _localClock.value = newClock
         appendEvent(VcEventKind.INTERNAL, null, description, newClock)
+        _clockTicks.tryEmit(ClockTickEvent(localId, VcEventKind.INTERNAL))
     }
 
     /** Compare two events from the log by their clock snapshots. */

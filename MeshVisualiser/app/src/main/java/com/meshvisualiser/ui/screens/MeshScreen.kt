@@ -115,6 +115,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             electionTerm = electionTerm,
             localVectorClock = localVectorClock.entries,
             peerVectorClocks = peerVectorClocks.mapValues { it.value.entries },
+            clockTicks = viewModel.vectorClockManager.clockTicks,
             peerRttHistory = peerRttHistory,
             dataLogs = dataLogs,
             packetAnimEvents = packetAnimEvents,
@@ -190,7 +191,8 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                             } else {
                                 showSessionSummary = true
                             }
-                        }
+                        },
+                        onSendVcProbe = { viewModel.sendVcProbe() }
                     )
                 }
 

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.NetworkCheck
@@ -79,6 +80,7 @@ fun MeshFabMenu(
     onOpenDataLogs: () -> Unit,
     onOpenNetwork: () -> Unit,
     onOpenSummary: () -> Unit,
+    onSendVcProbe: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -211,6 +213,14 @@ fun MeshFabMenu(
                 },
                 icon = { Icon(Icons.Default.Summarize, contentDescription = null, modifier = Modifier.size(20.dp)) },
                 text = { Text("Summary", style = MaterialTheme.typography.labelMedium) }
+            )
+            FloatingActionButtonMenuItem(
+                onClick = {
+                    menuExpanded = false
+                    onSendVcProbe()
+                },
+                icon = { Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text("VC Probe", style = MaterialTheme.typography.labelMedium) }
             )
         }
     }

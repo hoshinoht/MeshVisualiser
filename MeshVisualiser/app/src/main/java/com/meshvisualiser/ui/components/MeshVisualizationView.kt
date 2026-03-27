@@ -64,6 +64,7 @@ fun MeshVisualizationView(
     electionTerm: Int = 0,
     localVectorClock: Map<Long, Int> = emptyMap(),
     peerVectorClocks: Map<Long, Map<Long, Int>> = emptyMap(),
+    clockTicks: kotlinx.coroutines.flow.SharedFlow<com.meshvisualiser.mesh.VectorClockManager.ClockTickEvent>? = null,
     peerRttHistory: Map<Long, List<Long>>,
     dataLogs: List<DataLogEntry>,
     packetAnimEvents: List<PacketAnimEvent>,
@@ -165,9 +166,24 @@ fun MeshVisualizationView(
     // --- Node receive pulse (quick scale bump when a packet arrives) ---
     val nodePulses = remember { mutableStateMapOf<Long, Animatable<Float, AnimationVector1D>>() }
 
+    // --- Vector clock chip flash (amber on send, cyan on receive) ---
+    val clockChipPulses = remember { mutableStateMapOf<Long, Animatable<Float, AnimationVector1D>>() }
+    val clockChipIsSend = remember { mutableStateMapOf<Long, Boolean>() }
+
     // --- Packet flow animations (SLOW so users can follow) ---
     val activeAnims = remember { mutableStateListOf<ActivePacketAnim>() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(clockTicks) {
+        clockTicks?.collect { tick ->
+            val pulse = clockChipPulses.getOrPut(tick.nodeId) { Animatable(0f) }
+            clockChipIsSend[tick.nodeId] = tick.kind == com.meshvisualiser.mesh.VcEventKind.SEND
+            scope.launch {
+                pulse.snapTo(1f)
+                pulse.animateTo(0f, spatialSpec)
+            }
+        }
+    }
 
     // Packet travel: PACKET_TRAVEL_MS ease-in-out — slow enough to clearly see the dot travel
     val packetTravelSpec = tween<Float>(durationMillis = PACKET_TRAVEL_MS, easing = FastOutSlowInEasing)
@@ -683,20 +699,35 @@ fun MeshVisualizationView(
                     val chipWidth = (clockStr.length * 11f + 16f).coerceIn(60f, 140f)
                     val chipHeight = 24f
 
+                    // Clock pulse animation
+                    val chipPulse = clockChipPulses[nodeId]?.value ?: 0f
+                    val isSendFlash = clockChipIsSend[nodeId] ?: true
+                    val flashColor = if (isSendFlash) ElectionMsg else primaryColor // amber send, cyan receive
+                    val chipBorderColor = androidx.compose.ui.graphics.lerp(
+                        nodeColor.copy(alpha = 0.4f * scale),
+                        flashColor,
+                        chipPulse
+                    )
+                    val chipBgColor = androidx.compose.ui.graphics.lerp(
+                        surfaceColor.copy(alpha = 0.7f * scale),
+                        flashColor.copy(alpha = 0.18f),
+                        chipPulse
+                    )
+
                     // Chip background
                     drawRoundRect(
-                        color = surfaceColor.copy(alpha = 0.7f * scale),
+                        color = chipBgColor,
                         topLeft = Offset(pos.x - chipWidth / 2f, chipY - chipHeight / 2f),
                         size = androidx.compose.ui.geometry.Size(chipWidth, chipHeight),
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f)
                     )
                     // Chip border
                     drawRoundRect(
-                        color = nodeColor.copy(alpha = 0.4f * scale),
+                        color = chipBorderColor,
                         topLeft = Offset(pos.x - chipWidth / 2f, chipY - chipHeight / 2f),
                         size = androidx.compose.ui.geometry.Size(chipWidth, chipHeight),
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f),
-                        style = Stroke(width = 1.5f)
+                        style = Stroke(width = 1.5f + chipPulse * 1.5f)
                     )
                     // Clock text
                     rttPaint.textSize = 20f

@@ -100,6 +100,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Send a VC_PROBE to all peers — purely to advance vector clocks for educational demo. */
+    fun sendVcProbe() {
+        if (!isInitialized || !meshStarted) return
+        val vcMap = vectorClockManager.onSend(-1L, "VC Probe (broadcast)")
+        nearbyManager.broadcastMessage(MeshMessage.vcProbe(localId, vcMap))
+    }
+
     fun completeOnboarding() {
         viewModelScope.launch { prefsRepo.setOnboardingCompleted(true) }
     }
