@@ -468,23 +468,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         collectorJobs.forEach { it.cancel() }
         collectorJobs.clear()
 
-        // Observe peers — detect departures and trigger re-election if leader left
+        // Observe peers — detect arrivals/departures and manage mesh membership
         collectorJobs += viewModelScope.launch {
             nearbyManager.peers.collect { newPeers ->
                 val oldPeers = _peers.value
                 _peers.value = newPeers
                 dataExchange.onPeersChanged(newPeers)
 
-                // Detect peers that departed (had a valid peerId in old map but missing from new)
                 if (meshStarted) {
                     val oldValidIds = oldPeers.values.filter { it.hasValidPeerId }.associateBy { it.peerId }
-                    val newValidIds = newPeers.values.filter { it.hasValidPeerId }.map { it.peerId }.toSet()
+                    val newValidIds = newPeers.values.filter { it.hasValidPeerId }.associateBy { it.peerId }
+
+                    // Detect peers that departed
                     for ((peerId, info) in oldValidIds) {
                         if (peerId !in newValidIds) {
                             val name = info.deviceModel.ifBlank { info.displayName.ifBlank { peerId.toString().takeLast(4) } }
                             Log.d(TAG, "Peer departed: $name ($peerId)")
                             _peerEvents.tryEmit(PeerEvent.PeerLeft(name))
                             meshManager.onPeerDisconnected(peerId)
+                        }
+                    }
+
+                    // Detect new peers that completed handshake after mesh started —
+                    // send them START_MESH so they auto-join (fixes "must wait for all peers" bug)
+                    for ((peerId, info) in newValidIds) {
+                        if (peerId !in oldValidIds) {
+                            val name = info.deviceModel.ifBlank { info.displayName.ifBlank { peerId.toString().takeLast(4) } }
+                            Log.d(TAG, "Late peer joined mesh: $name ($peerId), sending START_MESH")
+                            _peerEvents.tryEmit(PeerEvent.PeerJoined(name))
+                            nearbyManager.sendMessage(info.endpointId, MeshMessage.startMesh(localId))
+                            // Trigger re-election to include the new peer
+                            meshManager.startElection()
                         }
                     }
                 }
