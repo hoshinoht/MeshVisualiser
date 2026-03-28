@@ -138,17 +138,6 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             }
         }
 
-        // CSMA/CD overlay
-        if (transmissionMode == TransmissionMode.CSMA_CD &&
-            csmaState.currentState != CsmaState.IDLE) {
-            CsmacdOverlay(
-                csmaState = csmaState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 200.dp)
-            )
-        }
-
         // Bottom: FAB menu + persistent control bar
         if (meshState == MeshState.RESOLVING || meshState == MeshState.CONNECTED) {
             Column(
@@ -156,6 +145,15 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
             ) {
+                // CSMA/CD overlay — inside the bottom column so it stacks above the controls
+                if (transmissionMode == TransmissionMode.CSMA_CD &&
+                    csmaState.currentState != CsmaState.IDLE) {
+                    CsmacdOverlay(
+                        csmaState = csmaState,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+
                 // Floating action menu (end-aligned)
                 Row(
                     modifier = Modifier
