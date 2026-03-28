@@ -118,10 +118,11 @@ fun ConnectionScreen(
 
                     OutlinedTextField(
                         value = displayName,
-                        onValueChange = onDisplayNameChange,
+                        onValueChange = { if (it.length <= 8) onDisplayNameChange(it) },
                         label = { Text("Display Name") },
                         placeholder = { Text("e.g. Alice") },
                         singleLine = true,
+                        supportingText = { Text("${displayName.length}/8") },
                         enabled = connectionState == ConnectionFlowState.IDLE,
                         modifier = Modifier.fillMaxWidth()
                     )
