@@ -8,19 +8,31 @@ import (
 	"time"
 )
 
-// allowedOrigins is the set of origins permitted for CORS.
-// Empty means no origins are allowed; add entries as needed.
-var allowedOrigins = map[string]bool{
-	// Add allowed origins here, e.g.:
-	// "https://example.com": true,
+// Singapore Time (UTC+8) — all log output uses this timezone.
+var sgt = time.FixedZone("SGT", 8*60*60)
+
+func init() {
+	// Suppress default log timestamp — we prepend SGT timestamps ourselves.
+	log.SetFlags(0)
+}
+
+func sgtLog(format string, args ...any) {
+	ts := time.Now().In(sgt).Format("2006/01/02 15:04:05")
+	log.Printf(ts+" "+format, args...)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("writeJSON encode error: %v", err)
+		sgtLog("writeJSON encode error: %v", err)
 	}
+}
+
+// allowedOrigins is the set of origins permitted for CORS.
+var allowedOrigins = map[string]bool{
+	// Add allowed origins here, e.g.:
+	// "https://example.com": true,
 }
 
 // statusRecorder wraps http.ResponseWriter to capture the status code.
@@ -46,7 +58,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		} else if r.Method == http.MethodOptions {
-			// No CORS headers for disallowed origins; still respond to preflight.
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -65,7 +76,6 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 
 func apiKeyMiddleware(expectedKey string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Exempt health check for uptime monitoring
 		if r.Method == http.MethodGet && r.URL.Path == "/health" {
 			next.ServeHTTP(w, r)
 			return
@@ -84,6 +94,6 @@ func logMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		sr := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(sr, r)
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, sr.statusCode, time.Since(start).Round(time.Microsecond))
+		sgtLog("%s %s %d %s", r.Method, r.URL.Path, sr.statusCode, time.Since(start).Round(time.Microsecond))
 	})
 }

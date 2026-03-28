@@ -8,20 +8,22 @@ import (
 	"time"
 )
 
-type summaryEntry struct {
-	response SummaryResponse
-	expiry   time.Time
+// ── Generic TTL cache ──
+
+type cacheEntry[T any] struct {
+	value  T
+	expiry time.Time
 }
 
-// SummaryCache is an in-memory cache for LLM-generated session summaries.
-type SummaryCache struct {
+// TTLCache is a generic in-memory cache with per-entry expiry.
+type TTLCache[T any] struct {
 	mu      sync.RWMutex
-	entries map[string]summaryEntry
+	entries map[string]cacheEntry[T]
 	ttl     time.Duration
 }
 
-func NewSummaryCache(ttl time.Duration) *SummaryCache {
-	c := &SummaryCache{entries: make(map[string]summaryEntry), ttl: ttl}
+func NewTTLCache[T any](ttl time.Duration) *TTLCache[T] {
+	c := &TTLCache[T]{entries: make(map[string]cacheEntry[T]), ttl: ttl}
 	go func() {
 		for range time.Tick(10 * time.Minute) {
 			c.evict()
@@ -30,32 +32,24 @@ func NewSummaryCache(ttl time.Duration) *SummaryCache {
 	return c
 }
 
-func (c *SummaryCache) key(req SummaryRequest) string {
-	h := sha256.New()
-	h.Write([]byte(req.MeshState))
-	if req.QuizScore != nil && req.QuizTotal != nil {
-		fmt.Fprintf(h, "|%d/%d", *req.QuizScore, *req.QuizTotal)
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-func (c *SummaryCache) Get(req SummaryRequest) (SummaryResponse, bool) {
+func (c *TTLCache[T]) Get(key string) (T, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	e, ok := c.entries[c.key(req)]
+	e, ok := c.entries[key]
 	if !ok || time.Now().After(e.expiry) {
-		return SummaryResponse{}, false
+		var zero T
+		return zero, false
 	}
-	return e.response, true
+	return e.value, true
 }
 
-func (c *SummaryCache) Set(req SummaryRequest, resp SummaryResponse) {
+func (c *TTLCache[T]) Set(key string, value T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries[c.key(req)] = summaryEntry{response: resp, expiry: time.Now().Add(c.ttl)}
+	c.entries[key] = cacheEntry[T]{value: value, expiry: time.Now().Add(c.ttl)}
 }
 
-func (c *SummaryCache) evict() {
+func (c *TTLCache[T]) evict() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
@@ -64,4 +58,49 @@ func (c *SummaryCache) evict() {
 			delete(c.entries, k)
 		}
 	}
+}
+
+func (c *TTLCache[T]) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.entries)
+}
+
+// ── Key helpers ──
+
+func hashKey(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write([]byte(p))
+		h.Write([]byte("|"))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// ── Typed cache constructors ──
+
+// SummaryCache caches LLM-generated session summaries.
+type SummaryCache = TTLCache[SummaryResponse]
+
+func NewSummaryCache(ttl time.Duration) *SummaryCache {
+	return NewTTLCache[SummaryResponse](ttl)
+}
+
+func SummaryCacheKey(req SummaryRequest) string {
+	extra := ""
+	if req.QuizScore != nil && req.QuizTotal != nil {
+		extra = fmt.Sprintf("%d/%d", *req.QuizScore, *req.QuizTotal)
+	}
+	return hashKey(req.MeshState, extra)
+}
+
+// QuizCache caches LLM-generated quiz responses.
+type QuizCache = TTLCache[QuizResponse]
+
+func NewQuizCache(ttl time.Duration) *QuizCache {
+	return NewTTLCache[QuizResponse](ttl)
+}
+
+func QuizCacheKey(meshState string) string {
+	return hashKey(meshState)
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,7 +14,7 @@ import (
 func extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
 	rc := http.NewResponseController(w)
 	if err := rc.SetWriteDeadline(time.Now().Add(d)); err != nil {
-		log.Printf("warning: could not extend write deadline: %v", err)
+		sgtLog("warning: could not extend write deadline: %v", err)
 	}
 }
 
@@ -186,7 +185,7 @@ func validateLLMBaseURL(rawURL string) error {
 
 // Route registration.
 
-func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryCache) {
+func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryCache, quizCache *QuizCache) {
 
 	// GET /ai/config
 	mux.HandleFunc("GET /ai/config", func(w http.ResponseWriter, r *http.Request) {
@@ -222,7 +221,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 			}
 		}
 		cfg.Update(body.BaseURL, body.Model, body.APIKey)
-		log.Printf("LLM config updated: base_url=%s model=%s has_key=%v", body.BaseURL, body.Model, body.APIKey != "")
+		sgtLog("LLM config updated: base_url=%s model=%s has_key=%v", body.BaseURL, body.Model, body.APIKey != "")
 		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 	})
 
@@ -250,10 +249,10 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 		content, err := callLLM(cfg, []chatMessage{
 			{Role: "system", Content: narratorSystemPrompt},
 			{Role: "user", Content: userPrompt},
-		}, 200)
+		}, 200, "narrate")
 
 		if err != nil {
-			log.Printf("narrate LLM error: %v", err)
+			sgtLog("narrate LLM error: %v", err)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
@@ -291,9 +290,9 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 		messages = append(messages, chatMessage{Role: "user", Content: req.Question})
 
-		content, err := callLLM(cfg, messages, 400)
+		content, err := callLLM(cfg, messages, 400, "what-if")
 		if err != nil {
-			log.Printf("what-if LLM error: %v", err)
+			sgtLog("what-if LLM error: %v", err)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
@@ -312,8 +311,9 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 		}
 
 		// Check cache first
-		if cached, ok := summaryCache.Get(req); ok {
-			log.Printf("summary cache hit")
+		cacheKey := SummaryCacheKey(req)
+		if cached, ok := summaryCache.Get(cacheKey); ok {
+			sgtLog("summary cache hit")
 			writeJSON(w, http.StatusOK, cached)
 			return
 		}
@@ -326,16 +326,16 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 		content, err := callLLM(cfg, []chatMessage{
 			{Role: "system", Content: summarySystemPrompt},
 			{Role: "user", Content: userContent},
-		}, 600)
+		}, 600, "summary")
 
 		if err != nil {
-			log.Printf("summary LLM error: %v", err)
+			sgtLog("summary LLM error: %v", err)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
 
 		resp := SummaryResponse{Summary: content}
-		summaryCache.Set(req, resp)
+		summaryCache.Set(cacheKey, resp)
 		writeJSON(w, http.StatusOK, resp)
 	})
 
@@ -349,12 +349,20 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 			return
 		}
 
+		// Check quiz cache first
+		qCacheKey := QuizCacheKey(req.MeshState)
+		if cached, ok := quizCache.Get(qCacheKey); ok {
+			sgtLog("quiz cache hit (%d questions, source=%s)", len(cached.Questions), cached.Source)
+			writeJSON(w, http.StatusOK, cached)
+			return
+		}
+
 		// Try LLM first
 		userPrompt := "Here is the student's current mesh network session data:\n" + req.MeshState
 		content, err := callLLM(cfg, []chatMessage{
 			{Role: "system", Content: quizSystemPrompt},
 			{Role: "user", Content: userPrompt},
-		}, 2000)
+		}, 2000, "quiz")
 
 		if err == nil {
 			var questions []QuizQuestion
@@ -366,16 +374,18 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 					}
 				}
 				if len(valid) >= 5 {
-					log.Printf("quiz: LLM generated %d valid questions", len(valid))
-					writeJSON(w, http.StatusOK, QuizResponse{Questions: valid, Source: "ai"})
+					sgtLog("quiz: LLM generated %d valid questions", len(valid))
+					qResp := QuizResponse{Questions: valid, Source: "ai"}
+					quizCache.Set(qCacheKey, qResp)
+					writeJSON(w, http.StatusOK, qResp)
 					return
 				}
-				log.Printf("quiz: LLM produced only %d valid questions, falling back to static", len(valid))
+				sgtLog("quiz: LLM produced only %d valid questions, falling back to static", len(valid))
 			} else {
-				log.Printf("quiz: LLM parse error: %v", parseErr)
+				sgtLog("quiz: LLM parse error: %v", parseErr)
 			}
 		} else {
-			log.Printf("quiz: LLM error: %v, falling back to static", err)
+			sgtLog("quiz: LLM error: %v, falling back to static", err)
 		}
 
 		// Fallback: static question pool
