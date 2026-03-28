@@ -466,11 +466,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         collectorJobs.forEach { it.cancel() }
         collectorJobs.clear()
 
-        // Observe peers
+        // Observe peers — detect departures and trigger re-election if leader left
         collectorJobs += viewModelScope.launch {
-            nearbyManager.peers.collect { peers ->
-                _peers.value = peers
-                dataExchange.onPeersChanged(peers)
+            nearbyManager.peers.collect { newPeers ->
+                val oldPeers = _peers.value
+                _peers.value = newPeers
+                dataExchange.onPeersChanged(newPeers)
+
+                // Detect peers that departed (had a valid peerId in old map but missing from new)
+                if (meshStarted) {
+                    val oldValidIds = oldPeers.values.filter { it.hasValidPeerId }.associateBy { it.peerId }
+                    val newValidIds = newPeers.values.filter { it.hasValidPeerId }.map { it.peerId }.toSet()
+                    for ((peerId, info) in oldValidIds) {
+                        if (peerId !in newValidIds) {
+                            val name = info.deviceModel.ifBlank { info.displayName.ifBlank { peerId.toString().takeLast(4) } }
+                            Log.d(TAG, "Peer departed: $name ($peerId)")
+                            _peerEvents.tryEmit(PeerEvent.PeerLeft(name))
+                            meshManager.onPeerDisconnected(peerId)
+                        }
+                    }
+                }
             }
         }
         // Observe mesh state

@@ -215,6 +215,18 @@ class MeshManager(
         nearbyManager.broadcastMessage(MeshMessage.poseUpdate(localId, x, y, z, qx, qy, qz, qw))
     }
 
+    /**
+     * Called when a peer disconnects from the mesh.
+     * If the departed peer was the leader, reset leader state and trigger re-election.
+     */
+    fun onPeerDisconnected(peerId: Long) {
+        if (peerId == _currentLeaderId.value) {
+            Log.d(TAG, "Leader $peerId disconnected — triggering re-election")
+            _currentLeaderId.value = -1L
+            startElection()
+        }
+    }
+
     /** Cleanup resources. */
     fun cleanup() {
         electionTimeoutRunnable?.let { handler.removeCallbacks(it) }
