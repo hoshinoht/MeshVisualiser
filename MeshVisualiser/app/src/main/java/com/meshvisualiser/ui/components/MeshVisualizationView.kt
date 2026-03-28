@@ -30,6 +30,8 @@ import com.meshvisualiser.models.PeerInfo
 import com.meshvisualiser.models.DataLogEntry
 import com.meshvisualiser.models.PacketAnimEvent
 import com.meshvisualiser.ui.theme.*
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -97,6 +99,40 @@ fun MeshVisualizationView(
         // Clean up removed nodes
         val toRemove = nodeScales.keys - allNodeIds.toSet()
         toRemove.forEach { nodeScales.remove(it) }
+    }
+
+    // --- Animated node positions (smooth graph reformation) ---
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    val nodeAnimX = remember { mutableStateMapOf<Long, Animatable<Float, AnimationVector1D>>() }
+    val nodeAnimY = remember { mutableStateMapOf<Long, Animatable<Float, AnimationVector1D>>() }
+
+    LaunchedEffect(allNodeIds, leaderId, canvasSize) {
+        if (canvasSize.width == 0 || canvasSize.height == 0) return@LaunchedEffect
+        val cX = canvasSize.width / 2f
+        val cY = canvasSize.height * 0.38f
+        val gR = minOf(canvasSize.width, canvasSize.height) * 0.28f
+        val effectiveLeader = if (leaderId > 0) leaderId else localId
+
+        val targets = mutableMapOf<Long, Offset>()
+        targets[effectiveLeader] = Offset(cX, cY)
+        val followers = allNodeIds.filter { it != effectiveLeader }
+        followers.forEachIndexed { index, id ->
+            val angle = 2.0 * PI * index / maxOf(followers.size, 1) - PI / 2.0
+            targets[id] = Offset(
+                cX + gR * cos(angle).toFloat(),
+                cY + gR * sin(angle).toFloat()
+            )
+        }
+
+        // Clean up removed nodes
+        (nodeAnimX.keys - allNodeIds.toSet()).forEach { nodeAnimX.remove(it); nodeAnimY.remove(it) }
+
+        targets.forEach { (id, target) ->
+            val ax = nodeAnimX.getOrPut(id) { Animatable(target.x) }
+            val ay = nodeAnimY.getOrPut(id) { Animatable(target.y) }
+            launch { ax.animateTo(target.x, spatialSpec) }
+            launch { ay.animateTo(target.y, spatialSpec) }
+        }
     }
 
     // --- Leader glow pulse (slow spatial spring) ---
@@ -250,7 +286,7 @@ fun MeshVisualizationView(
     val curvePath2Ref = remember { androidx.compose.ui.graphics.Path() }
     val nodePositionsRef = remember { mutableMapOf<Long, Offset>() }
 
-    Canvas(modifier = modifier.fillMaxSize()) {
+    Canvas(modifier = modifier.fillMaxSize().onSizeChanged { canvasSize = it }) {
         val centerX = size.width / 2f
         val centerY = size.height * 0.38f
         val graphRadius = minOf(size.width, size.height) * 0.28f
@@ -354,21 +390,34 @@ fun MeshVisualizationView(
         )
 
         // ============================
-        // 2. BUILD NODE POSITIONS
+        // 2. BUILD NODE POSITIONS (animated)
         // ============================
         nodePositionsRef.clear()
         val nodePositions = nodePositionsRef
 
         val effectiveLeaderId = if (leaderId > 0) leaderId else localId
-        nodePositions[effectiveLeaderId] = Offset(centerX, centerY)
+
+        allNodeIds.forEach { id ->
+            val ax = nodeAnimX[id]
+            val ay = nodeAnimY[id]
+            if (ax != null && ay != null) {
+                nodePositions[id] = Offset(ax.value, ay.value)
+            }
+        }
+        // Fallback: if animations haven't started yet, use static positions
+        if (nodePositions.isEmpty()) {
+            nodePositions[effectiveLeaderId] = Offset(centerX, centerY)
+            val followers = allNodeIds.filter { it != effectiveLeaderId }
+            followers.forEachIndexed { index, peerId ->
+                val angle = 2.0 * PI * index / maxOf(followers.size, 1) - PI / 2.0
+                nodePositions[peerId] = Offset(
+                    centerX + graphRadius * cos(angle).toFloat(),
+                    centerY + graphRadius * sin(angle).toFloat()
+                )
+            }
+        }
 
         val followers = allNodeIds.filter { it != effectiveLeaderId }
-        followers.forEachIndexed { index, peerId ->
-            val angle = 2.0 * PI * index / maxOf(followers.size, 1) - PI / 2.0
-            val x = centerX + graphRadius * cos(angle).toFloat()
-            val y = centerY + graphRadius * sin(angle).toFloat()
-            nodePositions[peerId] = Offset(x, y)
-        }
 
         // Paints are pre-cached via remember {} above Canvas — colors updated at top of Canvas block
 
@@ -672,15 +721,23 @@ fun MeshVisualizationView(
             } else {
                 val pos = Offset(lerp(from.x, to.x, t), lerp(from.y, to.y, t))
 
-                val trailStart = Offset(
-                    lerp(from.x, to.x, maxOf(t - 0.15f, 0f)),
-                    lerp(from.y, to.y, maxOf(t - 0.15f, 0f))
-                )
+                // Full route line — visible throughout the animation so the
+                // transmission path is clear even for non-adjacent peers
                 drawLine(
-                    color = dotColor.copy(alpha = 0.3f),
-                    start = trailStart,
+                    color = dotColor.copy(alpha = 0.15f),
+                    start = from,
+                    end = to,
+                    strokeWidth = 3f,
+                    cap = StrokeCap.Round,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
+                )
+
+                // Bright trail from start up to current dot position
+                drawLine(
+                    color = dotColor.copy(alpha = 0.45f),
+                    start = from,
                     end = pos,
-                    strokeWidth = 4f,
+                    strokeWidth = 3.5f,
                     cap = StrokeCap.Round
                 )
 
