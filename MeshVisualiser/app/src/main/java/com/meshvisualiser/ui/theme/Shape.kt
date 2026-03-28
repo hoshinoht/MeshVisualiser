@@ -1,16 +1,13 @@
 package com.meshvisualiser.ui.theme
 
-import android.graphics.Matrix as AndroidMatrix
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.toShape
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.unit.dp
-import androidx.graphics.shapes.RoundedPolygon
-import androidx.graphics.shapes.toPath
 
 val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(12.dp),
@@ -38,39 +35,29 @@ val StatusBadgeShape = RoundedCornerShape(8.dp)
 
 // ---------------------------------------------------------------------------
 // M3 Expressive shape tokens for decorative UI elements
-// Uses GenericShape + RoundedPolygon.toPath() since .toShape() is unavailable
-// in the current androidx.graphics.shapes version on this project.
+// Uses the official M3E RoundedPolygon.toShape() composable extension.
 // ---------------------------------------------------------------------------
 
-/**
- * Converts a [RoundedPolygon] to a Compose [Shape] by scaling the polygon's
- * normalised [−1, 1] coordinate space to fill the draw bounds.
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-private fun RoundedPolygon.asShape(): Shape = GenericShape { size, _ ->
-    val polygon = this@asShape
-    val m = AndroidMatrix()
-    // RoundedPolygon is normalised to [−1, 1]; scale to the destination bounds.
-    m.setScale(size.width / 2f, size.height / 2f)
-    m.postTranslate(size.width / 2f, size.height / 2f)
-    val androidPath = polygon.toPath().also { it.transform(m) }
-    addPath(androidPath.asComposePath())
-}
+val ScoreShape: Shape
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Composable get() = MaterialShapes.Sunny.toShape()
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-val ScoreShape: Shape = MaterialShapes.Sunny.asShape()
+val AiBadgeShape: Shape
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Composable get() = MaterialShapes.Cookie6Sided.toShape()
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-val AiBadgeShape: Shape = MaterialShapes.Cookie6Sided.asShape()
+val StepDiscoveringShape: Shape
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Composable get() = MaterialShapes.Diamond.toShape()
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-val StepDiscoveringShape: Shape = MaterialShapes.Diamond.asShape()
+val StepElectingShape: Shape
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Composable get() = MaterialShapes.Pentagon.toShape()
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-val StepElectingShape: Shape = MaterialShapes.Pentagon.asShape()
+val StepResolvingShape: Shape
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Composable get() = MaterialShapes.Clover4Leaf.toShape()
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-val StepResolvingShape: Shape = MaterialShapes.Clover4Leaf.asShape()
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-val StepConnectedShape: Shape = MaterialShapes.Flower.asShape()
+val StepConnectedShape: Shape
+    @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+    @Composable get() = MaterialShapes.Flower.toShape()
