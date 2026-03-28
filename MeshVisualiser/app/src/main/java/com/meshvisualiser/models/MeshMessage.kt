@@ -2,6 +2,7 @@ package com.meshvisualiser.models
 
 import android.util.Log
 import com.google.gson.Gson
+import com.meshvisualiser.network.ByteArrayPool
 
 /** Parsed pose data from a POSE_UPDATE message. */
 data class PoseData(
@@ -94,6 +95,24 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
         return gson.toJson(this).toByteArray(Charsets.UTF_8)
     }
 
+    /**
+     * Serialize into a pooled [ByteArray] from [ByteArrayPool].
+     *
+     * Returns a [PooledBytes] wrapper whose [PooledBytes.release] **must** be called
+     * after the payload has been consumed (e.g. handed to Nearby Connections) to
+     * return the buffer to the pool.
+     *
+     * This avoids a fresh allocation on every send — critical on the pose-broadcast
+     * hot path which fires every frame × N peers.
+     */
+    fun toPooledBytes(): PooledBytes {
+        val json = gson.toJson(this)
+        val utf8 = json.toByteArray(Charsets.UTF_8)
+        val buf = ByteArrayPool.acquire(utf8.size)
+        System.arraycopy(utf8, 0, buf, 0, utf8.size)
+        return PooledBytes(buf, utf8.size)
+    }
+
     fun getMessageType(): MessageType? = MessageType.fromValue(type)
 
     /**
@@ -133,5 +152,23 @@ data class MeshMessage(val type: Int, val senderId: Long, val data: String = "")
         } catch (e: Exception) {
             null
         }
+    }
+}
+
+/**
+ * Wrapper around a pooled [ByteArray] buffer with its actual content length.
+ *
+ * The backing buffer may be larger than [size] (pool returns fixed-capacity arrays).
+ * Use [bytes] for the trimmed copy suitable for Nearby Connections, then call
+ * [release] to return the backing buffer to the pool.
+ */
+class PooledBytes(private val buffer: ByteArray, val size: Int) {
+    /** Content bytes trimmed to [size]. Safe to hand off to Nearby Connections. */
+    val bytes: ByteArray
+        get() = if (buffer.size == size) buffer else buffer.copyOf(size)
+
+    /** Return the backing buffer to [ByteArrayPool]. Call exactly once after consumption. */
+    fun release() {
+        ByteArrayPool.release(buffer)
     }
 }

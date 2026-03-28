@@ -336,9 +336,11 @@ class NearbyConnectionsManager(
     snapshot.keys.forEach { endpointId -> connectionsClient.disconnectFromEndpoint(endpointId) }
   }
 
-  /** Send a message to a specific endpoint. */
+  /** Send a message to a specific endpoint. Uses [ByteArrayPool] to reduce GC pressure. */
   fun sendMessage(endpointId: String, message: MeshMessage) {
-    val payload = Payload.fromBytes(message.toBytes())
+    val pooled = message.toPooledBytes()
+    val payload = Payload.fromBytes(pooled.bytes)
+    pooled.release()
     val type = message.getMessageType()
     connectionsClient
             .sendPayload(endpointId, payload)
@@ -348,9 +350,11 @@ class NearbyConnectionsManager(
             .addOnFailureListener { e -> Log.e(TAG, "Failed to send $type to $endpointId", e) }
   }
 
-  /** Broadcast a message to all connected peers. */
+  /** Broadcast a message to all connected peers. Serializes once via [ByteArrayPool], shares payload across endpoints. */
   fun broadcastMessage(message: MeshMessage) {
-    val payload = Payload.fromBytes(message.toBytes())
+    val pooled = message.toPooledBytes()
+    val payload = Payload.fromBytes(pooled.bytes)
+    pooled.release()
     val type = message.getMessageType()
     _peers.value.keys.forEach { endpointId ->
       connectionsClient.sendPayload(endpointId, payload)
