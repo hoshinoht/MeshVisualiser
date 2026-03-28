@@ -166,6 +166,49 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 		writeJSON(w, http.StatusOK, room.Conditions)
 	})
 
+	// --- Snapshots ---
+
+	mux.HandleFunc("GET /rooms/{code}/snapshots", func(w http.ResponseWriter, r *http.Request) {
+		code := r.PathValue("code")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
+		snapshots, ok := store.GetSnapshots(code)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, snapshots)
+	})
+
+	mux.HandleFunc("PUT /rooms/{code}/snapshots/{peerId}", func(w http.ResponseWriter, r *http.Request) {
+		code := r.PathValue("code")
+		peerId := r.PathValue("peerId")
+		if !isValidRoomCode(code) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid room code"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
+		var data any
+		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+		if _, err := store.GetOrCreate(code); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
+		_, ok := store.SetSnapshot(code, peerId, data)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "room not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// --- Network Conditions ---
+
 	mux.HandleFunc("PUT /rooms/{code}/conditions", func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
 		if !isValidRoomCode(code) {

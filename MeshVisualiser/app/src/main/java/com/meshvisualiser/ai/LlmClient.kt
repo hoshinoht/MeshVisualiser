@@ -41,6 +41,10 @@ class AiClient(
         apiKey = key
     }
 
+    fun updateServerUrl(url: String) {
+        serverBaseUrl = url
+    }
+
     // ── Narrate ──
 
     data class NarrateRequest(
@@ -148,6 +152,11 @@ class AiClient(
 
     suspend fun testConnection(): Result<TestResponse> =
         post("/ai/test", emptyMap<String, String>(), TestResponse::class.java)
+
+    // ── Room Snapshot ──
+
+    suspend fun uploadSnapshot(roomCode: String, peerId: String, snapshot: MeshStateSnapshot): Result<Unit> =
+        put("/rooms/$roomCode/snapshots/$peerId", snapshot)
 
     // ── Room / Anchor ──
 

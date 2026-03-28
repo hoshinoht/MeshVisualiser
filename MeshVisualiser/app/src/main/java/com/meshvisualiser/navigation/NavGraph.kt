@@ -12,6 +12,7 @@ import com.meshvisualiser.ui.screens.MainScreen
 import com.meshvisualiser.ui.MainViewModel
 import com.meshvisualiser.ui.screens.ConnectionScreen
 import com.meshvisualiser.ui.screens.OnboardingScreen
+import com.meshvisualiser.ui.screens.SettingsScreen
 
 @Composable
 fun MeshNavHost(
@@ -24,6 +25,7 @@ fun MeshNavHost(
     val navController = rememberNavController()
 
     val displayName by viewModel.displayName.collectAsStateWithLifecycle()
+    val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val groupCode by viewModel.groupCode.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val peers by viewModel.peers.collectAsStateWithLifecycle()
@@ -79,7 +81,18 @@ fun MeshNavHost(
                 hardwareIssues = hardwareIssues,
                 onEnableHardware = { /* Open system settings — handled by OS intents */ },
                 discoveryTimeoutReached = discoveryTimeoutReached,
-                onRetryDiscovery = { viewModel.retryDiscovery() }
+                onRetryDiscovery = { viewModel.retryDiscovery() },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) }
+            )
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                displayName = displayName,
+                onDisplayNameChange = { viewModel.setDisplayName(it) },
+                serverUrl = serverUrl,
+                onServerUrlChange = { viewModel.setServerUrl(it) },
+                onBack = { navController.popBackStack() }
             )
         }
 

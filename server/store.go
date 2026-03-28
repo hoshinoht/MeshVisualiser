@@ -6,14 +6,22 @@ import (
 	"time"
 )
 
+// PeerSnapshot is a device's view of the session, uploaded periodically.
+type PeerSnapshot struct {
+	PeerId    string `json:"peer_id"`
+	Data      any    `json:"data"` // opaque JSON from the client's MeshStateSnapshot
+	UpdatedAt string `json:"updated_at"`
+}
+
 // Room holds all state for a mesh session.
 type Room struct {
-	Code       string            `json:"code"`
-	AnchorID   string            `json:"anchor_id,omitempty"`
-	LeaderID   string            `json:"leader_id,omitempty"`
-	Conditions NetworkConditions `json:"conditions"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
+	Code       string                   `json:"code"`
+	AnchorID   string                   `json:"anchor_id,omitempty"`
+	LeaderID   string                   `json:"leader_id,omitempty"`
+	Conditions NetworkConditions        `json:"conditions"`
+	Snapshots  map[string]*PeerSnapshot `json:"snapshots,omitempty"`
+	CreatedAt  time.Time                `json:"created_at"`
+	UpdatedAt  time.Time                `json:"updated_at"`
 }
 
 // NetworkConditions are the tunable simulation parameters.
@@ -130,6 +138,39 @@ func (s *Store) SetConditions(code string, cond NetworkConditions) (Room, bool) 
 	r.Conditions = cond
 	r.UpdatedAt = time.Now()
 	return *r, true
+}
+
+func (s *Store) SetSnapshot(code, peerId string, data any) (Room, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.rooms[code]
+	if !ok {
+		return Room{}, false
+	}
+	if r.Snapshots == nil {
+		r.Snapshots = make(map[string]*PeerSnapshot)
+	}
+	r.Snapshots[peerId] = &PeerSnapshot{
+		PeerId:    peerId,
+		Data:      data,
+		UpdatedAt: time.Now().In(sgt).Format("2006-01-02T15:04:05+08:00"),
+	}
+	r.UpdatedAt = time.Now()
+	return *r, true
+}
+
+func (s *Store) GetSnapshots(code string) ([]PeerSnapshot, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	r, ok := s.rooms[code]
+	if !ok {
+		return nil, false
+	}
+	out := make([]PeerSnapshot, 0, len(r.Snapshots))
+	for _, snap := range r.Snapshots {
+		out = append(out, *snap)
+	}
+	return out, true
 }
 
 // Cleanup expired rooms (older than ttl).

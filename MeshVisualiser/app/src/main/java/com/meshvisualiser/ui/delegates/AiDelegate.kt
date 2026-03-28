@@ -92,15 +92,25 @@ class AiDelegate(
     private val _sessionSummary = MutableStateFlow(SessionSummary(null))
     val sessionSummary: StateFlow<SessionSummary> = _sessionSummary.asStateFlow()
 
+    /** Last captured snapshot — preserved so summary survives session cleanup. */
+    private var lastSnapshot: MeshStateSnapshot? = null
+
+    /** Save current state before session teardown so summary/retry still works. */
+    fun preserveSnapshot() {
+        lastSnapshot = captureSnapshot()
+    }
+
     fun generateSessionSummary() {
         _sessionSummary.value = SessionSummary(null, isLoading = true)
 
-        scope.launch {
-            val snapshot = captureSnapshot()
-            val quiz = quizState()
-            val quizScore = if (quiz.answeredCount > 0) quiz.score else null
-            val quizTotal = if (quiz.answeredCount > 0) quiz.answeredCount else null
+        // Use preserved snapshot if available (session may have already been cleaned up),
+        // otherwise capture a fresh one and save it for retries.
+        val snapshot = lastSnapshot ?: captureSnapshot().also { lastSnapshot = it }
+        val quiz = quizState()
+        val quizScore = if (quiz.answeredCount > 0) quiz.score else null
+        val quizTotal = if (quiz.answeredCount > 0) quiz.answeredCount else null
 
+        scope.launch {
             val result = sessionSummarizer.generateSummary(snapshot, quizScore, quizTotal)
 
             result.onSuccess { summary -> _sessionSummary.value = SessionSummary(content = summary) }
@@ -110,6 +120,7 @@ class AiDelegate(
 
     fun clearSessionSummary() {
         _sessionSummary.value = SessionSummary(null)
+        lastSnapshot = null
     }
 
     // ── AI Connection Test ──

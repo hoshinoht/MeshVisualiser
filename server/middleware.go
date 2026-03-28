@@ -36,6 +36,8 @@ var allowedOrigins = map[string]bool{
 }
 
 // statusRecorder wraps http.ResponseWriter to capture the status code.
+// Implements Unwrap() so http.ResponseController can reach the underlying
+// connection for SetWriteDeadline, Flush, etc.
 type statusRecorder struct {
 	http.ResponseWriter
 	statusCode int
@@ -44,6 +46,10 @@ type statusRecorder struct {
 func (sr *statusRecorder) WriteHeader(code int) {
 	sr.statusCode = code
 	sr.ResponseWriter.WriteHeader(code)
+}
+
+func (sr *statusRecorder) Unwrap() http.ResponseWriter {
+	return sr.ResponseWriter
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

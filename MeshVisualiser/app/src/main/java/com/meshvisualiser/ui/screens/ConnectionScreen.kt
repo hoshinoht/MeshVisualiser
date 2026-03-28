@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.*
@@ -60,7 +61,8 @@ fun ConnectionScreen(
     hardwareIssues: List<HardwareIssue> = emptyList(),
     onEnableHardware: (HardwareType) -> Unit = {},
     discoveryTimeoutReached: Boolean = false,
-    onRetryDiscovery: () -> Unit = {}
+    onRetryDiscovery: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val validPeerCount = peers.values.count { it.hasValidPeerId }
@@ -82,6 +84,20 @@ fun ConnectionScreen(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
+        // Settings gear — top end
+        IconButton(
+            onClick = onOpenSettings,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Settings,
+                contentDescription = "Settings",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()

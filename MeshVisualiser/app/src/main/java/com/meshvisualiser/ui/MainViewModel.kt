@@ -66,15 +66,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val localId: Long = Random.nextLong(1, Long.MAX_VALUE)
 
+    private val _serverUrl = MutableStateFlow(AiClient.DEFAULT_SERVER_URL)
+    val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
+
     init {
         viewModelScope.launch {
             prefsRepo.displayName.collect { _displayName.value = it }
+        }
+        viewModelScope.launch {
+            prefsRepo.aiServerUrl.collect { url ->
+                val effective = url.ifBlank { AiClient.DEFAULT_SERVER_URL }
+                _serverUrl.value = effective
+                aiClient.updateServerUrl(effective)
+            }
         }
     }
 
     fun setDisplayName(name: String) {
         _displayName.value = name
         viewModelScope.launch { prefsRepo.setDisplayName(name) }
+    }
+
+    fun setServerUrl(url: String) {
+        _serverUrl.value = url.ifBlank { AiClient.DEFAULT_SERVER_URL }
+        viewModelScope.launch {
+            try {
+                prefsRepo.setAiServerUrl(url)
+                aiClient.updateServerUrl(url.ifBlank { AiClient.DEFAULT_SERVER_URL })
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "Invalid server URL: ${e.message}")
+            }
+        }
     }
 
     fun completeOnboarding() {
@@ -254,6 +276,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun leaveGroup() {
         meshStarted = false
+        snapshotUploadJob?.cancel()
         hardwareCheckJob?.cancel()
         discoveryTimeoutJob?.cancel()
         _discoveryTimeoutReached.value = false
@@ -353,9 +376,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val logs = dataExchange.dataLogs.value
         val recentEvents = logs.takeLast(20).map { log ->
+            val status = when (log.protocol) {
+                "ACK" -> "DELIVERED"
+                "DROP" -> "DROPPED"
+                "RETRY" -> "RETRANSMIT"
+                else -> if (log.direction == "OUT") "SENT" else "RECEIVED"
+            }
             EventSummary(
                 timestamp = log.timestamp, direction = log.direction,
-                protocol = log.protocol, status = log.protocol,
+                protocol = log.protocol, status = status,
                 peerModel = log.peerModel, seqNum = log.seqNum, rttMs = log.rttMs
             )
         }
@@ -409,6 +438,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var snapshotUploadJob: Job? = null
+
     private fun beginMesh() {
         if (meshStarted) {
             Log.w(TAG, "beginMesh called again -- ignoring duplicate")
@@ -420,6 +451,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         meshManager.startElection()
         _navigateToMesh.tryEmit(Unit)
         narrator.onEvent(ProtocolNarrator.ProtocolEvent.ElectionStarted(_peers.value.size))
+
+        // Periodically upload session snapshot to server for cross-device visibility
+        snapshotUploadJob?.cancel()
+        snapshotUploadJob = viewModelScope.launch {
+            while (meshStarted) {
+                delay(30_000) // every 30s
+                if (!meshStarted) break
+                try {
+                    val snapshot = captureSnapshot()
+                    aiClient.uploadSnapshot(roomCode, localId.toString(), snapshot)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Snapshot upload failed: ${e.message}")
+                }
+            }
+        }
     }
 
     private fun initializeWithServiceId(serviceId: String) {
