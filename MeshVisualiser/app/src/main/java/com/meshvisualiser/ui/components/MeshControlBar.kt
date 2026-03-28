@@ -299,19 +299,18 @@ fun MeshControlBar(
                         }
                     }
                 } else {
-                    // ── Step 2: Mode + Send ──
-                    Row(
+                    // ── Step 2: Peer name row + Mode/Send row ──
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Back chip showing selected peer — tap to go back
+                        // Row 1: selected peer chip
                         InputChip(
                             selected = true,
                             onClick = { onSelectPeer(null) },
                             label = {
                                 Text(
-                                    text = selectedPeerName ?: "",
+                                    text = "To: ${selectedPeerName ?: ""}",
                                     style = MaterialTheme.typography.labelSmall
                                 )
                             },
@@ -324,65 +323,84 @@ fun MeshControlBar(
                             }
                         )
 
-                        // Mode toggle
-                        @Suppress("DEPRECATION")
-                        ButtonGroup {
-                            ToggleButton(
-                                checked = transmissionMode == TransmissionMode.DIRECT,
-                                onCheckedChange = { if (it) onModeChanged(TransmissionMode.DIRECT) }
-                            ) {
-                                Text("Direct", style = MaterialTheme.typography.labelSmall)
-                            }
-                            ToggleButton(
-                                checked = transmissionMode == TransmissionMode.CSMA_CD,
-                                onCheckedChange = { if (it) onModeChanged(TransmissionMode.CSMA_CD) }
-                            ) {
-                                Text("CSMA/CD", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        // Send buttons: TCP (blue) | UDP (purple)
-                        SplitButtonLayout(
-                            leadingButton = {
-                                FilledTonalButton(
-                                    onClick = onSendTcp,
-                                    enabled = !isTcpBusy,
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        // Row 2: mode toggle + send buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Mode toggle
+                            @Suppress("DEPRECATION")
+                            ButtonGroup {
+                                ToggleButton(
+                                    checked = transmissionMode == TransmissionMode.DIRECT,
+                                    onCheckedChange = { if (it) onModeChanged(TransmissionMode.DIRECT) }
                                 ) {
-                                    if (isTcpBusy) {
-                                        LoadingIndicator(modifier = Modifier.size(16.dp))
-                                    } else {
+                                    Text("Direct", style = MaterialTheme.typography.labelSmall)
+                                }
+                                ToggleButton(
+                                    checked = transmissionMode == TransmissionMode.CSMA_CD,
+                                    onCheckedChange = { if (it) onModeChanged(TransmissionMode.CSMA_CD) }
+                                ) {
+                                    Text("CSMA/CD", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            // Send buttons: TCP (blue) | UDP (purple)
+                            SplitButtonLayout(
+                                leadingButton = {
+                                    FilledTonalButton(
+                                        onClick = onSendTcp,
+                                        enabled = !isTcpBusy,
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                    ) {
+                                        if (isTcpBusy) {
+                                            LoadingIndicator(modifier = Modifier.size(14.dp))
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "TCP",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                },
+                                trailingButton = {
+                                    FilledTonalButton(
+                                        onClick = onSendUdp,
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                    ) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.Send,
-                                            contentDescription = "Send TCP",
-                                            modifier = Modifier.size(16.dp),
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "UDP",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer
                                         )
                                     }
                                 }
-                            },
-                            trailingButton = {
-                                FilledTonalButton(
-                                    onClick = onSendUdp,
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = "Send UDP",
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.onTertiaryContainer
-                                    )
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
