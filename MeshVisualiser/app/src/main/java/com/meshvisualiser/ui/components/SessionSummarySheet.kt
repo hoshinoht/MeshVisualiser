@@ -180,6 +180,8 @@ fun SessionSummarySheet(
                                 color = MaterialTheme.colorScheme.onSurface
                             ),
                             linkColor = MaterialTheme.colorScheme.primary,
+                            syntaxHighlightColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            syntaxHighlightTextColor = MaterialTheme.colorScheme.primary,
                             isTextSelectable = true
                         )
                     }
