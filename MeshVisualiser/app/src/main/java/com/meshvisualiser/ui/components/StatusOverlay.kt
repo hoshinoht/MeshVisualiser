@@ -46,7 +46,7 @@ fun StatusOverlay(
         modifier = Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars),
-        shape = MaterialTheme.shapes.medium
+        shape = androidx.compose.ui.graphics.RectangleShape
     ) {
         Column(
             modifier = Modifier

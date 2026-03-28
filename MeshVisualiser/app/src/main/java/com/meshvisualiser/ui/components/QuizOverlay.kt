@@ -279,7 +279,7 @@ private fun QuestionScreen(
 @Composable
 private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit, onReplay: () -> Unit) {
     Column(
-        modifier = Modifier.padding(24.dp),
+        modifier = Modifier.fillMaxWidth().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -302,13 +302,13 @@ private fun FinalScoreScreen(quizState: QuizState, onClose: () -> Unit, onReplay
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "${quizState.score} / ${quizState.questions.size}",
-                    style = MaterialTheme.typography.displaySmall,
+                    text = "${quizState.score}/${quizState.questions.size}",
+                    style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
                     text = "$percentage%",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
             }

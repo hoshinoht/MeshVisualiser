@@ -112,117 +112,111 @@ fun MeshFabMenu(
             )
         }
 
-        // 3 always-visible SmallFABs: AR, Quiz, Narrator
+        // All FABs in one row: AR, Quiz, Narrator, 3-dot menu
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                SmallFloatingActionButton(
-                    onClick = onNavigateToAr,
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ViewInAr,
-                        contentDescription = "Open AR View",
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
+            SmallFloatingActionButton(
+                onClick = onNavigateToAr,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ViewInAr,
+                    contentDescription = "Open AR View",
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             }
 
-            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                SmallFloatingActionButton(
-                    onClick = onStartQuiz,
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Quiz,
-                        contentDescription = "Start Quiz",
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
+            SmallFloatingActionButton(
+                onClick = onStartQuiz,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Quiz,
+                    contentDescription = "Start Quiz",
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             }
 
-            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                SmallFloatingActionButton(
-                    onClick = onToggleNarrator,
-                    containerColor = if (narratorEnabled)
-                        MaterialTheme.colorScheme.primaryContainer
+            SmallFloatingActionButton(
+                onClick = onToggleNarrator,
+                containerColor = if (narratorEnabled)
+                    MaterialTheme.colorScheme.primaryContainer
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = if (narratorEnabled) "Disable AI Narrator" else "Enable AI Narrator",
+                    tint = if (narratorEnabled)
+                        MaterialTheme.colorScheme.onPrimaryContainer
                     else
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = if (narratorEnabled) "Disable AI Narrator" else "Enable AI Narrator",
-                        tint = if (narratorEnabled)
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        }
 
-        // FAB menu: ToggleFloatingActionButton opens 4 items
-        FloatingActionButtonMenu(
-            expanded = menuExpanded,
-            button = {
-                ToggleFloatingActionButton(
-                    checked = menuExpanded,
-                    onCheckedChange = { menuExpanded = it }
-                ) {
-                    Crossfade(
-                        targetState = menuExpanded,
-                        label = "fabMenuIconCrossfade",
-                        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
-                    ) { expanded ->
-                        if (expanded) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close Menu"
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Open Menu"
-                            )
+            // 3-dot overflow menu
+            FloatingActionButtonMenu(
+                expanded = menuExpanded,
+                button = {
+                    ToggleFloatingActionButton(
+                        checked = menuExpanded,
+                        onCheckedChange = { menuExpanded = it }
+                    ) {
+                        Crossfade(
+                            targetState = menuExpanded,
+                            label = "fabMenuIconCrossfade",
+                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
+                        ) { expanded ->
+                            if (expanded) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close Menu"
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Open Menu"
+                                )
+                            }
                         }
                     }
                 }
+            ) {
+                FloatingActionButtonMenuItem(
+                    onClick = {
+                        menuExpanded = false
+                        onOpenWhatIf()
+                    },
+                    icon = { Icon(Icons.Default.Psychology, contentDescription = null) },
+                    text = { Text("What-If") }
+                )
+                FloatingActionButtonMenuItem(
+                    onClick = {
+                        menuExpanded = false
+                        onOpenDataLogs()
+                    },
+                    icon = { Icon(Icons.Default.Code, contentDescription = null) },
+                    text = { Text("Data Logs") }
+                )
+                FloatingActionButtonMenuItem(
+                    onClick = {
+                        menuExpanded = false
+                        onOpenNetwork()
+                    },
+                    icon = { Icon(Icons.Default.NetworkCheck, contentDescription = null) },
+                    text = { Text("Network") }
+                )
+                FloatingActionButtonMenuItem(
+                    onClick = {
+                        menuExpanded = false
+                        onOpenSummary()
+                    },
+                    icon = { Icon(Icons.Default.Summarize, contentDescription = null) },
+                    text = { Text("Summary") }
+                )
             }
-        ) {
-            FloatingActionButtonMenuItem(
-                onClick = {
-                    menuExpanded = false
-                    onOpenWhatIf()
-                },
-                icon = { Icon(Icons.Default.Psychology, contentDescription = null) },
-                text = { Text("What-If") }
-            )
-            FloatingActionButtonMenuItem(
-                onClick = {
-                    menuExpanded = false
-                    onOpenDataLogs()
-                },
-                icon = { Icon(Icons.Default.Code, contentDescription = null) },
-                text = { Text("Data Logs") }
-            )
-            FloatingActionButtonMenuItem(
-                onClick = {
-                    menuExpanded = false
-                    onOpenNetwork()
-                },
-                icon = { Icon(Icons.Default.NetworkCheck, contentDescription = null) },
-                text = { Text("Network") }
-            )
-            FloatingActionButtonMenuItem(
-                onClick = {
-                    menuExpanded = false
-                    onOpenSummary()
-                },
-                icon = { Icon(Icons.Default.Summarize, contentDescription = null) },
-                text = { Text("Summary") }
-            )
         }
     }
 }
@@ -309,7 +303,7 @@ fun MeshControlBar(
                     // ── Step 2: Mode + Send ──
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Back chip showing selected peer — tap to go back
@@ -333,7 +327,7 @@ fun MeshControlBar(
 
                         // Mode toggle
                         @Suppress("DEPRECATION")
-                        ButtonGroup(modifier = Modifier.weight(1f)) {
+                        ButtonGroup {
                             ToggleButton(
                                 checked = transmissionMode == TransmissionMode.DIRECT,
                                 onCheckedChange = { if (it) onModeChanged(TransmissionMode.DIRECT) }
@@ -347,6 +341,8 @@ fun MeshControlBar(
                                 Text("CSMA/CD", style = MaterialTheme.typography.labelSmall)
                             }
                         }
+
+                        Spacer(modifier = Modifier.weight(1f))
 
                         // Send buttons
                         SplitButtonLayout(
@@ -364,11 +360,17 @@ fun MeshControlBar(
                                     } else {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.Send,
-                                            contentDescription = "Send TCP",
+                                            contentDescription = null,
                                             modifier = Modifier.size(14.dp),
                                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                                         )
                                     }
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "TCP",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
                                 }
                             },
                             trailingButton = {
@@ -381,9 +383,15 @@ fun MeshControlBar(
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = "Send UDP",
+                                        contentDescription = null,
                                         modifier = Modifier.size(14.dp),
                                         tint = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "UDP",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
                                     )
                                 }
                             }
