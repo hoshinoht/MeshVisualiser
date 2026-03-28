@@ -187,8 +187,11 @@ fun ConnectionScreen(
             || connectionState == ConnectionFlowState.STARTING
         ) {
             ModalBottomSheet(
-                onDismissRequest = onLeaveGroup,
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+                onDismissRequest = {},  // Swipe/scrim tap must not cancel mesh search
+                sheetState = rememberModalBottomSheetState(
+                    skipPartiallyExpanded = true,
+                    confirmValueChange = { it != SheetValue.Hidden }
+                )
             ) {
                 Column(
                     modifier = Modifier
