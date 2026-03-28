@@ -8,11 +8,9 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-# Build first if --build flag or APK doesn't exist
-if [[ "${1:-}" == "--build" ]] || [[ ! -f "$APK" ]]; then
-    echo "Building debug APK..."
-    ./gradlew assembleDebug
-fi
+# Always rebuild
+echo "Building debug APK..."
+./gradlew assembleDebug
 
 if [[ ! -f "$APK" ]]; then
     echo "ERROR: APK not found at $APK"

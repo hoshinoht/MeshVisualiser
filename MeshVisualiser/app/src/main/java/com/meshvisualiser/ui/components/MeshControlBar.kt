@@ -112,7 +112,7 @@ fun MeshFabMenu(
             )
         }
 
-        // All FABs in one row: AR, Quiz, Narrator, 3-dot menu
+        // 3 always-visible SmallFABs
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -155,68 +155,68 @@ fun MeshFabMenu(
                         MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
 
-            // 3-dot overflow menu
-            FloatingActionButtonMenu(
-                expanded = menuExpanded,
-                button = {
-                    ToggleFloatingActionButton(
-                        checked = menuExpanded,
-                        onCheckedChange = { menuExpanded = it }
-                    ) {
-                        Crossfade(
-                            targetState = menuExpanded,
-                            label = "fabMenuIconCrossfade",
-                            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
-                        ) { expanded ->
-                            if (expanded) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close Menu"
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Open Menu"
-                                )
-                            }
+        // 3-dot overflow menu (separate row so expansion doesn't push SmallFABs)
+        FloatingActionButtonMenu(
+            expanded = menuExpanded,
+            button = {
+                ToggleFloatingActionButton(
+                    checked = menuExpanded,
+                    onCheckedChange = { menuExpanded = it }
+                ) {
+                    Crossfade(
+                        targetState = menuExpanded,
+                        label = "fabMenuIconCrossfade",
+                        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()
+                    ) { expanded ->
+                        if (expanded) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Menu"
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Open Menu"
+                            )
                         }
                     }
                 }
-            ) {
-                FloatingActionButtonMenuItem(
-                    onClick = {
-                        menuExpanded = false
-                        onOpenWhatIf()
-                    },
-                    icon = { Icon(Icons.Default.Psychology, contentDescription = null) },
-                    text = { Text("What-If") }
-                )
-                FloatingActionButtonMenuItem(
-                    onClick = {
-                        menuExpanded = false
-                        onOpenDataLogs()
-                    },
-                    icon = { Icon(Icons.Default.Code, contentDescription = null) },
-                    text = { Text("Data Logs") }
-                )
-                FloatingActionButtonMenuItem(
-                    onClick = {
-                        menuExpanded = false
-                        onOpenNetwork()
-                    },
-                    icon = { Icon(Icons.Default.NetworkCheck, contentDescription = null) },
-                    text = { Text("Network") }
-                )
-                FloatingActionButtonMenuItem(
-                    onClick = {
-                        menuExpanded = false
-                        onOpenSummary()
-                    },
-                    icon = { Icon(Icons.Default.Summarize, contentDescription = null) },
-                    text = { Text("Summary") }
-                )
             }
+        ) {
+            FloatingActionButtonMenuItem(
+                onClick = {
+                    menuExpanded = false
+                    onOpenWhatIf()
+                },
+                icon = { Icon(Icons.Default.Psychology, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text("What-If", style = MaterialTheme.typography.labelMedium) }
+            )
+            FloatingActionButtonMenuItem(
+                onClick = {
+                    menuExpanded = false
+                    onOpenDataLogs()
+                },
+                icon = { Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text("Data Logs", style = MaterialTheme.typography.labelMedium) }
+            )
+            FloatingActionButtonMenuItem(
+                onClick = {
+                    menuExpanded = false
+                    onOpenNetwork()
+                },
+                icon = { Icon(Icons.Default.NetworkCheck, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text("Network", style = MaterialTheme.typography.labelMedium) }
+            )
+            FloatingActionButtonMenuItem(
+                onClick = {
+                    menuExpanded = false
+                    onOpenSummary()
+                },
+                icon = { Icon(Icons.Default.Summarize, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text("Summary", style = MaterialTheme.typography.labelMedium) }
+            )
         }
     }
 }
@@ -249,7 +249,7 @@ fun MeshControlBar(
     // Wizard step: false = pick peer, true = pick mode & send
     val showSendStep = selectedPeerId != null
     val selectedPeerName = peers.firstOrNull { it.peerId == selectedPeerId }
-        ?.let { it.deviceModel.ifEmpty { it.peerId.toString().takeLast(6) } }
+        ?.let { it.displayName.ifEmpty { it.deviceModel }.ifEmpty { it.peerId.toString().takeLast(6) } }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -289,9 +289,8 @@ fun MeshControlBar(
                                     onClick = { onSelectPeer(peer.peerId) },
                                     label = {
                                         Text(
-                                            text = peer.deviceModel.ifEmpty {
-                                                peer.peerId.toString().takeLast(6)
-                                            },
+                                            text = peer.displayName.ifEmpty { peer.deviceModel }
+                                                .ifEmpty { peer.peerId.toString().takeLast(6) },
                                             style = MaterialTheme.typography.labelSmall
                                         )
                                     }
@@ -344,7 +343,7 @@ fun MeshControlBar(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // Send buttons
+                        // Send buttons: TCP (blue) | UDP (purple)
                         SplitButtonLayout(
                             leadingButton = {
                                 FilledTonalButton(
@@ -353,24 +352,18 @@ fun MeshControlBar(
                                     colors = ButtonDefaults.filledTonalButtonColors(
                                         containerColor = MaterialTheme.colorScheme.primaryContainer
                                     ),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                                 ) {
                                     if (isTcpBusy) {
                                         LoadingIndicator(modifier = Modifier.size(16.dp))
                                     } else {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.Send,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp),
+                                            contentDescription = "Send TCP",
+                                            modifier = Modifier.size(16.dp),
                                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = "TCP",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
                                 }
                             },
                             trailingButton = {
@@ -379,19 +372,13 @@ fun MeshControlBar(
                                     colors = ButtonDefaults.filledTonalButtonColors(
                                         containerColor = MaterialTheme.colorScheme.tertiaryContainer
                                     ),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
+                                        contentDescription = "Send UDP",
+                                        modifier = Modifier.size(16.dp),
                                         tint = MaterialTheme.colorScheme.onTertiaryContainer
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = "UDP",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onTertiaryContainer
                                     )
                                 }
                             }

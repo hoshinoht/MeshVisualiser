@@ -40,7 +40,7 @@ import com.meshvisualiser.ui.components.HardwareType
 import com.meshvisualiser.ui.theme.StatusConnected
 import com.meshvisualiser.ui.theme.AiBadgeShape
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ConnectionScreen(
     displayName: String,
@@ -180,183 +180,181 @@ fun ConnectionScreen(
                 }
             }
 
-        }
-
-        // ── Lobby bottom sheet (shown after joining) ──
-        if (connectionState == ConnectionFlowState.IN_LOBBY
-            || connectionState == ConnectionFlowState.STARTING
-        ) {
-            ModalBottomSheet(
-                onDismissRequest = onLeaveGroup,
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+            // ── Lobby section (inline, shown after joining) ──
+            if (connectionState == ConnectionFlowState.IN_LOBBY
+                || connectionState == ConnectionFlowState.STARTING
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .padding(bottom = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Group: ${groupCode.uppercase()}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "$validPeerCount peer${if (validPeerCount != 1) "s" else ""}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                Spacer(modifier = Modifier.height(16.dp))
 
-                    // Hardware readiness
-                    if (hardwareIssues.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        HardwareChecklist(
-                            issues = hardwareIssues,
-                            onEnableAction = { type ->
-                                when (type) {
-                                    HardwareType.BLUETOOTH -> {
-                                        val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-                                        try {
-                                            context.startActivity(intent)
-                                        } catch (_: Exception) {
-                                            context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Group: ${groupCode.uppercase()}",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "$validPeerCount peer${if (validPeerCount != 1) "s" else ""}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Hardware readiness
+                        if (hardwareIssues.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            HardwareChecklist(
+                                issues = hardwareIssues,
+                                onEnableAction = { type ->
+                                    when (type) {
+                                        HardwareType.BLUETOOTH -> {
+                                            val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                                            try {
+                                                context.startActivity(intent)
+                                            } catch (_: Exception) {
+                                                context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                                            }
+                                        }
+                                        HardwareType.WIFI -> {
+                                            context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                                        }
+                                        HardwareType.LOCATION -> {
+                                            context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
                                         }
                                     }
-                                    HardwareType.WIFI -> {
-                                        context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-                                    }
-                                    HardwareType.LOCATION -> {
-                                        context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-                                    }
                                 }
-                            }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        DiscoveryRadar(
+                            isActive = isDiscovering || isAdvertising,
+                            peerCount = validPeerCount
                         )
-                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    DiscoveryRadar(
-                        isActive = isDiscovering || isAdvertising,
-                        peerCount = validPeerCount
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Peer list
-                    if (validPeerCount == 0) {
-                        Text(
-                            text = "Waiting for peers to join...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 16.dp)
-                        )
-                        LinearWavyProgressIndicator(
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column {
-                                peers.values.filter { it.hasValidPeerId }.forEach { peer ->
-                                    ListItem(
-                                        headlineContent = {
-                                            Text(
-                                                text = peer.displayName.ifEmpty { peer.deviceModel }.ifEmpty { "Unknown" },
-                                                style = MaterialTheme.typography.bodyMedium
+                        // Peer list
+                        if (validPeerCount == 0) {
+                            Text(
+                                text = "Waiting for peers to join...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                            LinearWavyProgressIndicator(
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column {
+                                    peers.values.filter { it.hasValidPeerId }.forEach { peer ->
+                                        ListItem(
+                                            headlineContent = {
+                                                Text(
+                                                    text = peer.displayName.ifEmpty { peer.deviceModel }.ifEmpty { "Unknown" },
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                            },
+                                            leadingContent = {
+                                                AnimatedPresenceDot()
+                                            },
+                                            trailingContent = {
+                                                Text(
+                                                    text = peer.peerId.toString().takeLast(6),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            },
+                                            colors = ListItemDefaults.colors(
+                                                containerColor = Color.Transparent
                                             )
-                                        },
-                                        leadingContent = {
-                                            AnimatedPresenceDot()
-                                        },
-                                        trailingContent = {
-                                            Text(
-                                                text = peer.peerId.toString().takeLast(6),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontFamily = FontFamily.Monospace,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        },
-                                        colors = ListItemDefaults.colors(
-                                            containerColor = Color.Transparent
                                         )
-                                    )
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // Discovery troubleshooting
-                    AnimatedVisibility(
-                        visible = discoveryTimeoutReached && validPeerCount == 0,
-                        enter = slideInVertically(
-                            animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                            initialOffsetY = { it / 4 }
-                        ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
-                        exit = slideOutVertically(
-                            animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
-                            targetOffsetY = { it / 4 }
-                        ) + fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
-                    ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.tertiaryContainer,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp)
+                        // Discovery troubleshooting
+                        AnimatedVisibility(
+                            visible = discoveryTimeoutReached && validPeerCount == 0,
+                            enter = slideInVertically(
+                                animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                                initialOffsetY = { it / 4 }
+                            ) + fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
+                            exit = slideOutVertically(
+                                animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                                targetOffsetY = { it / 4 }
+                            ) + fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "Having trouble finding peers?",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "• Make sure other devices are nearby and using the same group code\n• Try turning Bluetooth off and on\n• Ensure Location services are enabled",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Button(onClick = onRetryDiscovery) {
-                                    Text("Retry")
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Having trouble finding peers?",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "• Make sure other devices are nearby and using the same group code\n• Try turning Bluetooth off and on\n• Ensure Location services are enabled",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(onClick = onRetryDiscovery) {
+                                        Text("Retry")
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    Button(
-                        onClick = onStartMesh,
-                        enabled = validPeerCount >= 1
-                                && connectionState == ConnectionFlowState.IN_LOBBY,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        if (connectionState == ConnectionFlowState.STARTING) {
-                            LoadingIndicator(modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = onStartMesh,
+                            enabled = validPeerCount >= 1
+                                    && connectionState == ConnectionFlowState.IN_LOBBY,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            if (connectionState == ConnectionFlowState.STARTING) {
+                                LoadingIndicator(modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text(
+                                if (connectionState == ConnectionFlowState.STARTING) "Starting..."
+                                else "Start Mesh"
+                            )
                         }
-                        Text(
-                            if (connectionState == ConnectionFlowState.STARTING) "Starting..."
-                            else "Start Mesh"
-                        )
-                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    TextButton(onClick = onLeaveGroup) {
-                        Text("Leave Group")
+                        TextButton(onClick = onLeaveGroup) {
+                            Text("Leave Group")
+                        }
                     }
                 }
             }
