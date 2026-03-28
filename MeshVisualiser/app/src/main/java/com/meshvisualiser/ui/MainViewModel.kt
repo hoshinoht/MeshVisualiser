@@ -549,6 +549,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 // no need for a full election round-trip
                                 Log.d(TAG, "Fast-path: sending COORDINATOR to late joiner $peerId")
                                 nearbyManager.sendMessage(info.endpointId, MeshMessage.coordinator(localId, ""))
+                                // Sync current network config so late joiner's packets behave consistently
+                                nearbyManager.sendMessage(info.endpointId, MeshMessage.configSync(
+                                    localId,
+                                    dataExchange.udpDropProbability.value,
+                                    dataExchange.tcpDropProbability.value,
+                                    dataExchange.tcpAckTimeoutMs.value
+                                ))
                             } else if (_currentLeaderId.value > 0) {
                                 // We know the leader — let the late peer discover it via election
                                 // (the leader's handleHandshake already re-sends COORDINATOR)
