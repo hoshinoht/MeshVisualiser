@@ -469,7 +469,7 @@ fun MeshVisualizationView(
             // RTT label at midpoint
             if (avgRtt != null) {
                 drawRoundRect(
-                    color = Color.Black.copy(alpha = 0.4f),
+                    color = surfaceColor.copy(alpha = 0.6f),
                     topLeft = Offset(mid.x - 42f, mid.y - 22f),
                     size = androidx.compose.ui.geometry.Size(84f, 30f),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f)
@@ -697,13 +697,13 @@ fun MeshVisualizationView(
                     val crossAlpha = (t - 0.5f) * 2f
                     val crossSize = 10f
                     drawLine(
-                        Color.White.copy(alpha = crossAlpha * alpha),
+                        onSurfaceColor.copy(alpha = crossAlpha * alpha),
                         Offset(pos.x - crossSize, pos.y - crossSize),
                         Offset(pos.x + crossSize, pos.y + crossSize),
                         strokeWidth = 3f
                     )
                     drawLine(
-                        Color.White.copy(alpha = crossAlpha * alpha),
+                        onSurfaceColor.copy(alpha = crossAlpha * alpha),
                         Offset(pos.x + crossSize, pos.y - crossSize),
                         Offset(pos.x - crossSize, pos.y + crossSize),
                         strokeWidth = 3f
@@ -743,7 +743,7 @@ fun MeshVisualizationView(
 
                 drawCircle(dotColor.copy(alpha = 0.25f), radius = packetGlowRadius, center = pos)
                 drawCircle(dotColor, radius = packetDotRadius, center = pos)
-                drawCircle(Color.White.copy(alpha = 0.4f), radius = 5f, center = pos)
+                drawCircle(surfaceColor.copy(alpha = 0.4f), radius = 5f, center = pos)
 
                 packetLabelPaint.color = dotColor.toArgb()
                 drawContext.canvas.nativeCanvas.drawText(

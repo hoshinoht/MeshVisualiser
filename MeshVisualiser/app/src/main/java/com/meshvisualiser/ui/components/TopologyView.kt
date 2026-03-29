@@ -5,6 +5,7 @@ import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -35,6 +36,10 @@ fun TopologyView(
     val goodColor = TopologyGood
     val poorColor = TopologyPoor
 
+    // Resolve theme colors outside Canvas for light/dark compatibility
+    val onSurfaceArgb = MaterialTheme.colorScheme.onSurface.toArgb()
+    val onSurfaceVariantArgb = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
@@ -46,7 +51,7 @@ fun TopologyView(
 
         val labelPaint = Paint().apply {
             textSize = 28f
-            color = android.graphics.Color.WHITE
+            color = onSurfaceArgb
             textAlign = Paint.Align.CENTER
             typeface = Typeface.DEFAULT_BOLD
             isAntiAlias = true
@@ -54,7 +59,7 @@ fun TopologyView(
 
         val rttPaint = Paint().apply {
             textSize = 22f
-            color = android.graphics.Color.LTGRAY
+            color = onSurfaceVariantArgb
             textAlign = Paint.Align.CENTER
             isAntiAlias = true
         }
@@ -151,7 +156,7 @@ fun TopologyView(
         val topologyLabel = if (validPeers.size <= 1) "Point-to-Point" else "Star Topology"
         val topoPaint = Paint().apply {
             textSize = 24f
-            color = android.graphics.Color.parseColor("#B0BEC5")
+            color = onSurfaceVariantArgb
             textAlign = Paint.Align.CENTER
             isAntiAlias = true
         }

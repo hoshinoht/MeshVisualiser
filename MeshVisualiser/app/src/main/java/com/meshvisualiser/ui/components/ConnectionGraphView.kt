@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import com.meshvisualiser.models.PeerInfo
 import com.meshvisualiser.models.DataLogEntry
@@ -39,6 +41,12 @@ fun ConnectionGraphView(
     val recentLogs = dataLogs.filter { it.timestamp > recentCutoff }
     val messageCountByPeer = recentLogs.groupBy { it.peerId }.mapValues { it.value.size }
 
+    // Resolve theme colors outside Canvas so they work on both light and dark themes
+    val onSurfaceArgb = MaterialTheme.colorScheme.onSurface.toArgb()
+    val onSurfaceVariantArgb = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+    val outlineArgb = MaterialTheme.colorScheme.outline.toArgb()
+    val onSurfaceComposeColor = MaterialTheme.colorScheme.onSurface
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
@@ -50,7 +58,7 @@ fun ConnectionGraphView(
 
         val labelPaint = Paint().apply {
             textSize = 26f
-            color = android.graphics.Color.WHITE
+            color = onSurfaceArgb
             textAlign = Paint.Align.CENTER
             typeface = Typeface.DEFAULT_BOLD
             isAntiAlias = true
@@ -58,14 +66,14 @@ fun ConnectionGraphView(
 
         val detailPaint = Paint().apply {
             textSize = 20f
-            color = android.graphics.Color.LTGRAY
+            color = onSurfaceVariantArgb
             textAlign = Paint.Align.CENTER
             isAntiAlias = true
         }
 
         val endpointPaint = Paint().apply {
             textSize = 18f
-            color = android.graphics.Color.parseColor("#78909C")
+            color = outlineArgb
             textAlign = Paint.Align.CENTER
             isAntiAlias = true
         }
@@ -135,7 +143,7 @@ fun ConnectionGraphView(
             center = localPos
         )
         drawCircle(
-            color = Color.White,
+            color = onSurfaceComposeColor,
             radius = 26f,
             center = localPos,
             style = Stroke(width = 2f)
@@ -197,7 +205,7 @@ fun ConnectionGraphView(
                         "UDP" -> PacketUdp
                         "ACK" -> PacketAck
                         "DROP", "RETRY" -> PacketDrop
-                        else -> Color.Gray
+                        else -> onSurfaceComposeColor.copy(alpha = 0.5f)
                     }
                     // Small protocol indicator dot
                     drawCircle(
@@ -213,7 +221,7 @@ fun ConnectionGraphView(
         val legendY = size.height - 4f
         val legendPaint = Paint().apply {
             textSize = 18f
-            color = android.graphics.Color.parseColor("#90A4AE")
+            color = onSurfaceVariantArgb
             textAlign = Paint.Align.LEFT
             isAntiAlias = true
         }
