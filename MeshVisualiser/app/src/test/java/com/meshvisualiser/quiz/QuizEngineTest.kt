@@ -76,7 +76,7 @@ class QuizEngineTest {
             peerRttHistory = emptyMap()
         )
 
-        val topoQ = questions.find { it.text.contains("topology", ignoreCase = true) }
+        val topoQ = questions.find { it.text.contains("What topology type", ignoreCase = true) }
         assertNotNull("Should have a topology question", topoQ)
         assertTrue("Correct answer should be Star", topoQ!!.options[topoQ.correctIndex] == "Star")
     }
@@ -94,7 +94,7 @@ class QuizEngineTest {
             peerRttHistory = emptyMap()
         )
 
-        val topoQ = questions.find { it.text.contains("topology", ignoreCase = true) }
+        val topoQ = questions.find { it.text.contains("What topology type", ignoreCase = true) }
         assertNotNull("Should have a topology question", topoQ)
         assertEquals("Point-to-Point", topoQ!!.options[topoQ.correctIndex])
     }

@@ -332,7 +332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (isInitialized) {
             nearbyManager.broadcastMessage(MeshMessage.startMesh(localId))
         }
-        beginMesh()
+        beginMesh(isInitiator = true)
     }
 
     fun checkHardwareState() {
@@ -456,7 +456,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var snapshotUploadJob: Job? = null
 
-    private fun beginMesh() {
+    /**
+     * @param isInitiator true when the user pressed "Start Mesh" from the lobby.
+     *   false when we received START_MESH from a peer (late join) — in that case
+     *   we wait for COORDINATOR from the existing leader instead of running an
+     *   election with an incomplete peer view.
+     */
+    private fun beginMesh(isInitiator: Boolean = false) {
         if (meshStarted) {
             Log.w(TAG, "beginMesh called again -- ignoring duplicate")
             return
@@ -464,7 +470,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         meshStarted = true
         _connectionState.value = ConnectionFlowState.STARTING
         sessionStartTime = System.currentTimeMillis()
-        meshManager.startElection()
+        if (isInitiator) {
+            meshManager.startElection()
+        } else {
+            // Late joiner: wait for COORDINATOR from the existing leader.
+            // Avoids crowning ourselves leader before connecting to all peers.
+            meshManager.waitForCoordinator()
+        }
         _navigateToMesh.tryEmit(Unit)
         narrator.onEvent(ProtocolNarrator.ProtocolEvent.ElectionStarted(_peers.value.size))
 
@@ -512,7 +524,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     MessageType.DATA_TCP, MessageType.DATA_UDP ->
                         dataExchange.onDataReceived(endpointId, message)
                     MessageType.START_MESH ->
-                        if (_connectionState.value != ConnectionFlowState.STARTING) beginMesh()
+                        if (_connectionState.value != ConnectionFlowState.STARTING) beginMesh(isInitiator = false)
                     MessageType.CONFIG_SYNC ->
                         dataExchange.applyConfigSync(message.senderId, message.data)
                     MessageType.COORDINATOR -> {

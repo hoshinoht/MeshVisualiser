@@ -120,6 +120,27 @@ class MeshManager(
         handler.postDelayed(meshFormationTimeoutRunnable!!, MeshVisualizerApp.MESH_FORMATION_TIMEOUT_MS)
     }
 
+    /**
+     * Late-join mode: wait for COORDINATOR from the existing leader instead of
+     * immediately starting an election.  This prevents a rejoining node from
+     * crowning itself leader before it has connected to all peers.
+     *
+     * If no COORDINATOR arrives within the timeout, fall back to a normal election.
+     */
+    fun waitForCoordinator() {
+        Log.d(TAG, "Late join — waiting for COORDINATOR from existing leader (timeout=${MeshVisualizerApp.ELECTION_TIMEOUT_MS * 3}ms)")
+        _meshState.value = MeshState.ELECTING
+
+        coordinatorTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        coordinatorTimeoutRunnable = Runnable {
+            if (_currentLeaderId.value == -1L || _meshState.value == MeshState.ELECTING) {
+                Log.d(TAG, "No COORDINATOR received after late join — starting election")
+                startElection()
+            }
+        }
+        handler.postDelayed(coordinatorTimeoutRunnable!!, MeshVisualizerApp.ELECTION_TIMEOUT_MS * 3)
+    }
+
     /** Start the Bully Algorithm election. */
     fun startElection() {
         val nextTerm = _currentTerm.value + 1
@@ -211,6 +232,11 @@ class MeshManager(
         if (incomingTerm < _currentTerm.value) {
             Log.w(TAG, "Ignoring stale COORDINATOR from $senderId (term=$incomingTerm < current=${_currentTerm.value})")
             onNarratorEvent?.invoke(Triple("stale_coordinator", senderId, incomingTerm to _currentTerm.value))
+            // If we're the actual leader, correct the sender so it stops claiming leadership
+            if (isLeader) {
+                Log.d(TAG, "Replying with authoritative COORDINATOR (term=${_currentTerm.value}) to correct stale sender $senderId")
+                nearbyManager.sendMessage(endpointId, MeshMessage.coordinator(localId, "${_currentTerm.value}|"))
+            }
             return
         }
 
