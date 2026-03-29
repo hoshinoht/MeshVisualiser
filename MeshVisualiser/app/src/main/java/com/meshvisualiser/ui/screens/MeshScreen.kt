@@ -30,6 +30,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
     val peers by viewModel.peers.collectAsStateWithLifecycle()
     val isLeader by viewModel.isLeader.collectAsStateWithLifecycle()
     val currentLeaderId by viewModel.currentLeaderId.collectAsStateWithLifecycle()
+    val electionTerm by viewModel.currentTerm.collectAsStateWithLifecycle()
     val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
     val displayName by viewModel.displayName.collectAsStateWithLifecycle()
 
@@ -109,6 +110,7 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToAr: () -> Unit) {
             localId = viewModel.localId,
             peers = peers,
             leaderId = currentLeaderId,
+            electionTerm = electionTerm,
             peerRttHistory = peerRttHistory,
             dataLogs = dataLogs,
             packetAnimEvents = packetAnimEvents,

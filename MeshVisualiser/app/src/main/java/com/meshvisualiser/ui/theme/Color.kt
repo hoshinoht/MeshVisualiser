@@ -81,6 +81,11 @@ val PacketUdp = Color(0xFFFFA726)
 val PacketAck = Color(0xFF66BB6A)
 val PacketDrop = Color(0xFFEF5350)
 
+// Election protocol visualization
+val ElectionMsg = Color(0xFFFFD54F)    // Amber — ELECTION messages
+val ElectionOk = Color(0xFF81C784)     // Green — OK replies
+val ElectionCoord = Color(0xFFE040FB)  // Purple — COORDINATOR broadcast
+
 // CSMA/CD states
 val CsmaIdle = Color(0xFF78909C)
 val CsmaSensing = Color(0xFFFFCA28)

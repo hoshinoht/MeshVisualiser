@@ -60,6 +60,7 @@ fun MeshVisualizationView(
     localId: Long,
     peers: Map<String, PeerInfo>,
     leaderId: Long,
+    electionTerm: Int = 0,
     peerRttHistory: Map<Long, List<Long>>,
     dataLogs: List<DataLogEntry>,
     packetAnimEvents: List<PacketAnimEvent>,
@@ -659,6 +660,16 @@ fun MeshVisualizationView(
                     pos.y + scaledRadius + 60f,
                     rolePaint
                 )
+
+                // Term badge on leader node
+                if (isLeaderNode && electionTerm > 0) {
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "Term $electionTerm",
+                        pos.x,
+                        pos.y + scaledRadius + 80f,
+                        rolePaint
+                    )
+                }
             }
         }
 
@@ -677,6 +688,9 @@ fun MeshVisualizationView(
                 "TCP" -> PacketTcp
                 "UDP" -> PacketUdp
                 "ACK" -> PacketAck
+                "ELECTION" -> ElectionMsg
+                "OK" -> ElectionOk
+                "COORDINATOR" -> ElectionCoord
                 else -> PacketDrop
             }
 

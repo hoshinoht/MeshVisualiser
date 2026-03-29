@@ -127,6 +127,11 @@ class DataExchangeDelegate(
         _transmissionMode.value = mode
     }
 
+    /** Inject a packet animation from an external source (e.g. election events). */
+    fun injectPacketAnimation(type: String, fromId: Long, toId: Long) {
+        triggerPacketAnimation(type, fromId, toId)
+    }
+
     fun consumePacketEvent(eventId: Long) {
         _packetAnimEvents.update { it.filter { e -> e.id != eventId } }
     }

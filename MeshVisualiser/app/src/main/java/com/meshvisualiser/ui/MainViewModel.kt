@@ -146,6 +146,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentLeaderId = MutableStateFlow(-1L)
     val currentLeaderId: StateFlow<Long> = _currentLeaderId.asStateFlow()
 
+    private val _currentTerm = MutableStateFlow(0)
+    val currentTerm: StateFlow<Int> = _currentTerm.asStateFlow()
+
     private val _statusMessage = MutableStateFlow("Initializing...")
     val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
 
@@ -544,22 +547,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _peerEvents.tryEmit(PeerEvent.PeerJoined(name))
                             nearbyManager.sendMessage(info.endpointId, MeshMessage.startMesh(localId))
 
+                            val currentLeader = _currentLeaderId.value
+                            val term = meshManager.currentTerm.value
+
                             if (_isLeader.value) {
-                                // Fast path: we're the leader — send COORDINATOR directly,
-                                // no need for a full election round-trip
-                                Log.d(TAG, "Fast-path: sending COORDINATOR to late joiner $peerId")
-                                nearbyManager.sendMessage(info.endpointId, MeshMessage.coordinator(localId, ""))
-                                // Sync current network config so late joiner's packets behave consistently
+                                // We're the leader — send COORDINATOR with term + config.
+                                // Even if the joiner has a higher ID, we include our term
+                                // so the Bully+Term logic lets them decide whether to accept
+                                // or trigger a proper election.
+                                Log.d(TAG, "Sending COORDINATOR (term=$term) + config to late joiner $peerId")
+                                nearbyManager.sendMessage(info.endpointId, MeshMessage.coordinator(localId, "$term|"))
                                 nearbyManager.sendMessage(info.endpointId, MeshMessage.configSync(
                                     localId,
                                     dataExchange.udpDropProbability.value,
                                     dataExchange.tcpDropProbability.value,
                                     dataExchange.tcpAckTimeoutMs.value
                                 ))
-                            } else if (_currentLeaderId.value > 0) {
-                                // We know the leader — let the late peer discover it via election
-                                // (the leader's handleHandshake already re-sends COORDINATOR)
-                                Log.d(TAG, "Leader is ${_currentLeaderId.value}, late peer will receive COORDINATOR via handshake")
+                            } else if (currentLeader > 0) {
+                                // We're not leader but know who is — the leader's handleHandshake
+                                // will re-send COORDINATOR with term to the late joiner
+                                Log.d(TAG, "Leader is $currentLeader (term=$term), late peer will receive COORDINATOR via handshake")
                             } else {
                                 // No leader established yet — need a full election
                                 meshManager.startElection()
@@ -578,6 +585,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             meshManager.currentLeaderId.collect { leaderId ->
                 _currentLeaderId.value = leaderId
                 _isLeader.value = leaderId == localId
+            }
+        }
+        // Observe term
+        collectorJobs += viewModelScope.launch {
+            meshManager.currentTerm.collect { _currentTerm.value = it }
+        }
+        // Collect election events → inject as packet animations for graph visualization
+        collectorJobs += viewModelScope.launch {
+            meshManager.electionEvents.collect { event ->
+                val animType = when (event.type) {
+                    MeshManager.ElectionEventType.ELECTION_SENT -> "ELECTION"
+                    MeshManager.ElectionEventType.OK_RECEIVED -> "OK"
+                    MeshManager.ElectionEventType.COORDINATOR_BROADCAST -> "COORDINATOR"
+                }
+                dataExchange.injectPacketAnimation(animType, event.fromId, event.toId)
             }
         }
         // Discovery diagnostics
