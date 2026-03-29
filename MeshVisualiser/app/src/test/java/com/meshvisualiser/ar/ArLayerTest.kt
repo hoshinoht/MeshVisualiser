@@ -6,6 +6,7 @@ import io.mockk.*
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import com.google.ar.core.Anchor.CloudAnchorState
 
 class ArLayerTest {
 
@@ -28,7 +29,7 @@ class ArLayerTest {
         cloudAnchorManager = CloudAnchorManager(
             onAnchorHosted = { id, _ -> hostedAnchorId = id },
             onAnchorResolved = { anchor -> resolvedAnchor = anchor },
-            onResolveFailed = { resolveFailed = true },
+            onResolveFailed = { _ -> resolveFailed = true },
             onError = { msg -> errorMessage = msg }
         )
     }
@@ -107,6 +108,14 @@ class ArLayerTest {
         )
     }
 
+    private fun makeSessionManagerWithAnchor(isLeader: Boolean = false): ArSessionManager {
+        val manager = makeSessionManager(isLeader)
+        val mockAnchor = mockk<Anchor>(relaxed = true)
+        every { mockAnchor.pose } returns Pose.makeTranslation(0f, 0f, 0f)
+        manager.onCloudAnchorResolved(mockAnchor)
+        return manager
+    }
+
     @Test
     fun `localWorldPos is null on fresh instance`() {
         val manager = makeSessionManager()
@@ -131,28 +140,28 @@ class ArLayerTest {
     @Test
     fun `onCloudAnchorResolveFailed triggers retry callback`() {
         val manager = makeSessionManager()
-        manager.onCloudAnchorResolveFailed()
+        manager.onCloudAnchorResolveFailed(CloudAnchorState.ERROR_SERVICE_UNAVAILABLE)
         assertTrue(resolveRetryNeeded)
     }
 
     @Test
     fun `onCloudAnchorResolveFailed allows subsequent resolve for same ID`() {
-        val manager = makeSessionManager()
-        manager.onCloudAnchorResolveFailed()
+        val manager = makeSessionManagerWithAnchor()
+        manager.onCloudAnchorResolveFailed(CloudAnchorState.ERROR_SERVICE_UNAVAILABLE)
         manager.resolveCloudAnchor("anchor-retry")
         verify { mockCloudAnchorMgr.resolveAnchor("anchor-retry") }
     }
 
     @Test
     fun `resolveCloudAnchor delegates to cloudAnchorManager`() {
-        val manager = makeSessionManager()
+        val manager = makeSessionManagerWithAnchor()
         manager.resolveCloudAnchor("anchor-abc")
         verify { mockCloudAnchorMgr.resolveAnchor("anchor-abc") }
     }
 
     @Test
     fun `resolveCloudAnchor ignores duplicate call for same anchor ID`() {
-        val manager = makeSessionManager()
+        val manager = makeSessionManagerWithAnchor()
         manager.resolveCloudAnchor("anchor-abc")
         manager.resolveCloudAnchor("anchor-abc")
         verify(exactly = 1) { mockCloudAnchorMgr.resolveAnchor("anchor-abc") }
@@ -160,9 +169,9 @@ class ArLayerTest {
 
     @Test
     fun `resolveCloudAnchor allows re-resolve for different anchor ID after failure`() {
-        val manager = makeSessionManager()
+        val manager = makeSessionManagerWithAnchor()
         manager.resolveCloudAnchor("anchor-1")
-        manager.onCloudAnchorResolveFailed()
+        manager.onCloudAnchorResolveFailed(CloudAnchorState.ERROR_SERVICE_UNAVAILABLE)
         manager.resolveCloudAnchor("anchor-2")
         verify(exactly = 1) { mockCloudAnchorMgr.resolveAnchor("anchor-1") }
         verify(exactly = 1) { mockCloudAnchorMgr.resolveAnchor("anchor-2") }
@@ -170,9 +179,13 @@ class ArLayerTest {
 
     @Test
     fun `resolveCloudAnchor after reset allows same ID again`() {
-        val manager = makeSessionManager()
+        val manager = makeSessionManagerWithAnchor()
         manager.resolveCloudAnchor("anchor-1")
         manager.reset()
+        // reset clears worldAnchor, so we need to re-resolve it before the second call
+        val mockAnchor = mockk<Anchor>(relaxed = true)
+        every { mockAnchor.pose } returns Pose.makeTranslation(0f, 0f, 0f)
+        manager.onCloudAnchorResolved(mockAnchor)
         manager.resolveCloudAnchor("anchor-1")
         verify(exactly = 2) { mockCloudAnchorMgr.resolveAnchor("anchor-1") }
     }
