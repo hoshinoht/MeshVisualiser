@@ -295,6 +295,21 @@ class ArSessionManager(
         }
     }
 
+    fun forceReadyWithLocalAnchor() {
+        val anchor = worldAnchor ?: run {
+            cloudAnchorReady = true
+            Log.w(TAG, "forceReadyWithLocalAnchor: no local anchor, marking ready anyway")
+            return
+        }
+        poseManager.setSharedAnchor(anchor)
+        val pose = anchor.pose
+        setLocalWorldPos(pose.tx(), pose.ty(), pose.tz())
+        nodeManager.clearPeers()
+        poseManager.resetBroadcast()
+        cloudAnchorReady = true
+        Log.d(TAG, "forceReadyWithLocalAnchor: promoted local anchor as shared origin")
+    }
+
     fun repositionLocalNode() {
         localPositionLocked = false
         poseManager.resetBroadcast()

@@ -777,16 +777,22 @@ fun ArScreen(
             onSelectPeer = { viewModel.dataExchange.selectPeer(it) },
             onSendTcp = { viewModel.dataExchange.sendTcpData() },
             onSendUdp = { viewModel.dataExchange.sendUdpData() },
-            onBack = onBack,
+            onBack = {
+                isDisposed.value = true
+                coroutineScope.launch {
+                    delay(50L)
+                    onBack()
+                }
+            },
             onReposition = { sessionManagerRef[0]?.repositionLocalNode() },
             resolveTimedOut = resolveTimedOut.value,
             resolveFailedState = resolveFailedPermanently.value,
             onSkipSync = {
                 resolveTimedOut.value = false
                 resolveFailedPermanently.value = null
-                // Force anchorResolved so UI unblocks
+                sessionManagerRef[0]?.forceReadyWithLocalAnchor()
                 viewModel.cloudAnchor.onCloudAnchorResolved()
-            }
+            },
         )
 
         // AR session error overlay
@@ -817,7 +823,13 @@ fun ArScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
-                        Button(onClick = onBack) {
+                        Button(onClick = {
+                            isDisposed.value = true
+                            coroutineScope.launch {
+                                delay(50L)
+                                onBack()
+                            }
+                        }) {
                             Text("Go Back")
                         }
                     }
