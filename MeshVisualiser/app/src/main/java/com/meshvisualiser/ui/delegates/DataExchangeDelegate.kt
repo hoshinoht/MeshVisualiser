@@ -200,7 +200,7 @@ class DataExchangeDelegate(
             type = TransferType.SEND_TCP, peerModel = peer.deviceModel,
             peerId = targetId, status = TransferStatus.IN_PROGRESS
         ))
-        triggerPacketAnimation("TCP", localId, targetId)
+        triggerPacketAnimation("TCP", localId, targetId, seq)
         val firstSendTime = System.currentTimeMillis()
         pendingSendTimestamps[seq] = firstSendTime
         nm.sendMessage(peer.endpointId, message)
@@ -213,7 +213,7 @@ class DataExchangeDelegate(
                 addLog("OUT", "RETRY", targetId, peer.deviceModel, "Retransmit #$retry seq $seq", message.toBytes().size, seq)
                 updateTransferEvent(eventId) { it.copy(status = TransferStatus.RETRYING, retryCount = retry) }
                 narrator.onEvent(ProtocolNarrator.ProtocolEvent.TcpRetransmission(peer.deviceModel, seq, retry, _tcpAckTimeoutMs.value))
-                triggerPacketAnimation("TCP", localId, targetId)
+                triggerPacketAnimation("TCP", localId, targetId, seq)
                 pendingSendTimestamps[seq] = firstSendTime
                 nm.sendMessage(peer.endpointId, message)
             }
@@ -318,13 +318,13 @@ class DataExchangeDelegate(
                         type = TransferType.RECEIVE_TCP, peerModel = senderModel,
                         peerId = senderId, status = TransferStatus.DELIVERED
                     ))
-                    triggerPacketAnimation("TCP", senderId, localId)
+                    triggerPacketAnimation("TCP", senderId, localId, seq)
                     relayAnimEvent(senderId, localId, "TCP")
                     scope.launch {
                         delay(TCP_ACK_DELAY_MS)
                         nm.sendMessage(endpointId, MeshMessage.dataTcpAck(localId, seq))
                         addLog("OUT", "ACK", senderId, senderModel, "ACK for seq $seq", 0, seq)
-                        triggerPacketAnimation("ACK", localId, senderId)
+                        triggerPacketAnimation("ACK", localId, senderId, seq)
                         relayAnimEvent(localId, senderId, "ACK")
                     }
                 }
@@ -380,8 +380,8 @@ class DataExchangeDelegate(
 
     // ── Internal helpers ──
 
-    private fun triggerPacketAnimation(type: String, fromId: Long, toId: Long) {
-        _packetAnimEvents.update { it + PacketAnimEvent(id = nextPacketAnimId++, fromId = fromId, toId = toId, type = type) }
+    private fun triggerPacketAnimation(type: String, fromId: Long, toId: Long, seqNum: Int? = null) {
+        _packetAnimEvents.update { it + PacketAnimEvent(id = nextPacketAnimId++, fromId = fromId, toId = toId, type = type, seqNum = seqNum) }
     }
 
     private fun relayAnimEvent(fromId: Long, toId: Long, type: String) {

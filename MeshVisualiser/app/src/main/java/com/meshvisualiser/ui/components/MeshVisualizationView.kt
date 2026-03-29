@@ -46,6 +46,7 @@ private data class ActivePacketAnim(
     val fromId: Long,
     val toId: Long,
     val type: String,
+    val seqNum: Int? = null,
     val progress: Animatable<Float, AnimationVector1D>
 )
 
@@ -177,7 +178,7 @@ fun MeshVisualizationView(
             if (activeAnims.none { it.eventId == event.id } && activeAnims.size < 20) {
                 val anim = ActivePacketAnim(
                     event.id, event.fromId, event.toId,
-                    event.type, Animatable(0f)
+                    event.type, event.seqNum, Animatable(0f)
                 )
                 activeAnims.add(anim)
                 scope.launch {
@@ -760,8 +761,9 @@ fun MeshVisualizationView(
                 drawCircle(surfaceColor.copy(alpha = 0.4f), radius = 5f, center = pos)
 
                 packetLabelPaint.color = dotColor.toArgb()
+                val packetLabel = if (anim.seqNum != null) "${anim.type} #${anim.seqNum}" else anim.type
                 drawContext.canvas.nativeCanvas.drawText(
-                    anim.type,
+                    packetLabel,
                     pos.x,
                     pos.y - packetGlowRadius - 6f,
                     packetLabelPaint

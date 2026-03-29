@@ -510,7 +510,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             nearbyManager = nearbyManager,
             onBecomeLeader = ::onBecomeLeader,
             onNewLeader = ::onNewLeader,
-            onPoseUpdate = { _, _ -> }
+            onPoseUpdate = { _, _ -> },
+            onNarratorEvent = { event ->
+                when (event) {
+                    is Triple<*, *, *> -> {
+                        if (event.first == "stale_coordinator") {
+                            val senderId = event.second as Long
+                            val terms = event.third as Pair<*, *>
+                            narrator.onEvent(ProtocolNarrator.ProtocolEvent.StaleCoordinatorRejected(
+                                senderId, terms.first as Int, terms.second as Int
+                            ))
+                        }
+                    }
+                    "coordinator_timeout" -> {
+                        narrator.onEvent(ProtocolNarrator.ProtocolEvent.CoordinatorTimeout())
+                    }
+                }
+            }
         )
 
         // Cancel prior collector jobs
@@ -562,6 +578,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     dataExchange.udpDropProbability.value,
                                     dataExchange.tcpDropProbability.value,
                                     dataExchange.tcpAckTimeoutMs.value
+                                ))
+                                narrator.onEvent(ProtocolNarrator.ProtocolEvent.ConfigReplicated(
+                                    _peers.value.values.count { it.hasValidPeerId }
                                 ))
                             } else if (currentLeader > 0) {
                                 // We're not leader but know who is — the leader's handleHandshake

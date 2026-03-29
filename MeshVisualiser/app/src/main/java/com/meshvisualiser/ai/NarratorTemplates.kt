@@ -135,6 +135,34 @@ object NarratorTemplates {
                     "Your device will follow the leader's Cloud Anchor for shared AR coordinates."
         )
 
+    // --- Consensus / Split Brain ---
+
+    fun staleCoordinatorRejected(senderId: Long, senderTerm: Int, localTerm: Int): NarratorMessage =
+        NarratorMessage(
+            title = "Stale Leader Rejected",
+            explanation = "Device ${senderId.toString().takeLast(4)} claimed leadership with term $senderTerm, " +
+                "but our current term is $localTerm. The claim was rejected — this prevents " +
+                "'split brain' where two nodes think they're both the leader. " +
+                "Term numbers ensure only the latest election result is accepted."
+        )
+
+    fun configReplicated(followerCount: Int): NarratorMessage =
+        NarratorMessage(
+            title = "Configuration Replicated",
+            explanation = "The leader replicated network settings (drop rates, timeouts) to $followerCount follower(s). " +
+                "This is state replication — the leader maintains a consistent configuration across all nodes. " +
+                "In distributed databases, the same pattern keeps replicas in sync."
+        )
+
+    fun coordinatorTimeout(): NarratorMessage =
+        NarratorMessage(
+            title = "Coordinator Timeout",
+            explanation = "No COORDINATOR message arrived after receiving OK. " +
+                "This is a failure detector in action — if the expected leader doesn't announce " +
+                "within the timeout window, a new election starts. Distributed systems use " +
+                "timeouts as the primary mechanism to detect unresponsive nodes."
+        )
+
     // --- Escalation messages (when events repeat) ---
 
     fun repeatedRetransmissions(count: Int, peerModel: String): NarratorMessage =

@@ -414,6 +414,50 @@ var staticQuestionPool = []QuizQuestion{
 		Category:    "CONCEPT",
 		Explanation: "RTO is dynamically calculated from RTT measurements. If an ACK doesn't arrive within the RTO, TCP retransmits the segment.",
 	},
+
+	// ── Consensus & Split Brain ──
+	{
+		Text:        "What is 'split brain' in a distributed system?",
+		Options:     []string{"Two or more nodes each believe they are the leader simultaneously", "A network cable is physically split", "The database is partitioned into shards", "A node runs out of memory"},
+		Correct:     0,
+		Category:    "CONCEPT",
+		Explanation: "Split brain occurs when a network partition or stale messages cause multiple nodes to think they're the leader. Term numbers and quorum-based consensus prevent this.",
+	},
+	{
+		Text:        "How do term numbers prevent split brain in leader election?",
+		Options:     []string{"Each election increments a term counter; stale COORDINATOR messages with old terms are rejected", "Terms encrypt the leader's identity", "Terms limit how long a leader can serve", "Terms count the number of connected peers"},
+		Correct:     0,
+		Category:    "CONCEPT",
+		Explanation: "Term numbers create a monotonically increasing epoch. A COORDINATOR from term 2 is rejected if the receiver is already in term 3, preventing an old leader from reclaiming leadership.",
+	},
+	{
+		Text:        "What is consensus in a distributed system?",
+		Options:     []string{"All nodes agreeing on the same value or decision despite failures", "All nodes having identical hardware", "Nodes sharing the same IP address", "A voting system for user preferences"},
+		Correct:     0,
+		Category:    "CONCEPT",
+		Explanation: "Consensus means all non-faulty nodes agree on a single value. Leader election is a form of consensus — all peers agree on who the coordinator is.",
+	},
+	{
+		Text:        "What is state replication in distributed systems?",
+		Options:     []string{"The leader copies its state to followers so all nodes have consistent data", "Duplicating the entire server hardware", "Creating backup DNS entries", "Encrypting state before transmission"},
+		Correct:     0,
+		Category:    "CONCEPT",
+		Explanation: "State replication ensures all nodes share the same configuration or data. In a mesh network, the leader replicates settings (drop rates, timeouts) to followers for consistent behavior.",
+	},
+	{
+		Text:        "What is a failure detector in distributed systems?",
+		Options:     []string{"A mechanism to detect when a node has stopped responding, usually via timeouts", "A hardware diagnostic tool", "A firewall rule that blocks failed packets", "An encryption algorithm that detects tampering"},
+		Correct:     0,
+		Category:    "CONCEPT",
+		Explanation: "Failure detectors use timeouts to suspect unresponsive nodes. If no heartbeat or expected message arrives within a deadline, the node is presumed failed and recovery starts.",
+	},
+	{
+		Text:        "What is causal ordering in distributed messaging?",
+		Options:     []string{"Ensuring that if event A caused event B, all nodes see A before B", "Sorting messages alphabetically", "Encrypting messages in order", "Sending messages at fixed intervals"},
+		Correct:     0,
+		Category:    "CONCEPT",
+		Explanation: "Causal ordering preserves the happened-before relationship: if sending a message caused a reply, all observers see the original before the reply. Sequence numbers and vector clocks enable this.",
+	},
 }
 
 // pickStaticQuestions returns n randomly selected questions from the static pool.

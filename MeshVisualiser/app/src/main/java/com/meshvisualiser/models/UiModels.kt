@@ -30,7 +30,8 @@ data class PacketAnimEvent(
     val id: Long,
     val fromId: Long,
     val toId: Long,
-    val type: String, // "TCP", "UDP", "ACK", "DROP"
+    val type: String, // "TCP", "UDP", "ACK", "DROP", "ELECTION", "OK", "COORDINATOR"
+    val seqNum: Int? = null,
     val timestamp: Long = System.currentTimeMillis()
 )
 

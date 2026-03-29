@@ -66,6 +66,9 @@ class ProtocolNarrator(
         data class CsmaSuccess(val attempts: Int) : ProtocolEvent()
         data class ElectionStarted(val peerCount: Int) : ProtocolEvent()
         data class LeaderElected(val isLocal: Boolean) : ProtocolEvent()
+        data class StaleCoordinatorRejected(val senderId: Long, val senderTerm: Int, val localTerm: Int) : ProtocolEvent()
+        data class ConfigReplicated(val followerCount: Int) : ProtocolEvent()
+        class CoordinatorTimeout : ProtocolEvent()
     }
 
     fun setEnabled(enabled: Boolean) {
@@ -171,6 +174,15 @@ class ProtocolNarrator(
             is ProtocolEvent.LeaderElected -> {
                 NarratorTemplates.leaderElected(event.isLocal)
             }
+            is ProtocolEvent.StaleCoordinatorRejected -> {
+                NarratorTemplates.staleCoordinatorRejected(event.senderId, event.senderTerm, event.localTerm)
+            }
+            is ProtocolEvent.ConfigReplicated -> {
+                NarratorTemplates.configReplicated(event.followerCount)
+            }
+            is ProtocolEvent.CoordinatorTimeout -> {
+                NarratorTemplates.coordinatorTimeout()
+            }
         }
     }
 
@@ -222,6 +234,9 @@ class ProtocolNarrator(
         is ProtocolEvent.CsmaSuccess -> "CSMA/CD transmission succeeded after ${event.attempts} attempt(s)"
         is ProtocolEvent.ElectionStarted -> "Leader election started (${event.peerCount} peers)"
         is ProtocolEvent.LeaderElected -> "Leader elected (${if (event.isLocal) "local device" else "remote device"})"
+        is ProtocolEvent.StaleCoordinatorRejected -> "Rejected stale COORDINATOR from ${event.senderId} (term ${event.senderTerm} < current ${event.localTerm})"
+        is ProtocolEvent.ConfigReplicated -> "Leader replicated config to ${event.followerCount} follower(s)"
+        is ProtocolEvent.CoordinatorTimeout -> "Coordinator timeout — no COORDINATOR received, re-electing"
     }
 
     private fun postMessage(message: NarratorMessage) {

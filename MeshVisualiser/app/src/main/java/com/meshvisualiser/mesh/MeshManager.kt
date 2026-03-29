@@ -30,7 +30,8 @@ class MeshManager(
     private val nearbyManager: NearbyConnectionsManager,
     private val onBecomeLeader: () -> Unit,
     private val onNewLeader: (leaderId: Long) -> Unit,
-    private val onPoseUpdate: (peerId: Long, poseData: PoseData) -> Unit
+    private val onPoseUpdate: (peerId: Long, poseData: PoseData) -> Unit,
+    private val onNarratorEvent: ((Any) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "MeshManager"
@@ -182,6 +183,7 @@ class MeshManager(
         coordinatorTimeoutRunnable = Runnable {
             if (_currentLeaderId.value == -1L || _meshState.value == MeshState.ELECTING) {
                 Log.d(TAG, "COORDINATOR timeout — no COORDINATOR received after OK, restarting election")
+                onNarratorEvent?.invoke("coordinator_timeout")
                 startElection()
             }
         }
@@ -208,6 +210,7 @@ class MeshManager(
         // (prevents stale COORDINATOR from an old election overriding a newer one)
         if (incomingTerm < _currentTerm.value) {
             Log.w(TAG, "Ignoring stale COORDINATOR from $senderId (term=$incomingTerm < current=${_currentTerm.value})")
+            onNarratorEvent?.invoke(Triple("stale_coordinator", senderId, incomingTerm to _currentTerm.value))
             return
         }
 
