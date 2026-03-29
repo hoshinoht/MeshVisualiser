@@ -2,6 +2,7 @@ package com.meshvisualiser.ar
 
 import android.util.Log
 import com.google.ar.core.Anchor
+import com.google.ar.core.Anchor.CloudAnchorState
 import com.google.ar.core.Frame
 import com.google.ar.core.Pose
 import com.google.ar.core.Session
@@ -9,6 +10,7 @@ import com.google.ar.core.TrackingState
 import com.meshvisualiser.models.PeerInfo
 
 private const val TAG = "ArSessionManager"
+private const val MAX_RESOLVE_RETRIES = 5
 
 class ArSessionManager(
     private val nodeManager: ArNodeManager,
@@ -18,7 +20,8 @@ class ArSessionManager(
     private val isLeader: () -> Boolean,
     private val onLocalAnchorReady: (Anchor) -> Unit,
     private val onFeatureMapQuality: (Session.FeatureMapQuality) -> Unit,
-    private val onResolveRetryNeeded: () -> Unit
+    private val onResolveRetryNeeded: () -> Unit,
+    private val onResolvePermanentlyFailed: ((state: CloudAnchorState) -> Unit)? = null
 ) {
     private var worldAnchor: Anchor? = null
     private var anchorInitiated: Boolean = false
@@ -44,6 +47,13 @@ class ArSessionManager(
     // Frame amortization: round-robin cursor for peer updates
     private var peerUpdateCursor = 0
     private val PEER_UPDATE_BUDGET = 3  // max peers to process per frame
+    val resolveRetryCount: Int get() = _resolveRetryCount
+    private var _resolveRetryCount = 0
+
+    @Volatile private var lastTrackingState: TrackingState = TrackingState.PAUSED
+
+    /** True when the ARCore session is actively tracking. Used by ArScreen before resolving. */
+    fun isTracking(): Boolean = lastTrackingState == TrackingState.TRACKING
 
     /** World-space position of the local device node (set after anchor placement). */
     val localWorldPos: Triple<Float, Float, Float>?
@@ -62,6 +72,8 @@ class ArSessionManager(
         getPeers: () -> Map<String, PeerInfo>
     ) {
         val camera = frame.camera
+        // Always track the latest state so isTracking() stays accurate
+        lastTrackingState = camera.trackingState
         if (camera.trackingState != TrackingState.TRACKING) return
 
         // One-shot anchor + local sphere placement only ONCE
@@ -76,6 +88,15 @@ class ArSessionManager(
                 val wz = cp.tz() - fwd[2]
 
                 val localAnchor = session.createAnchor(Pose.makeTranslation(wx, wy, wz))
+
+                // Guard: ARCore can return an anchor already in STOPPED/ERROR state
+                if (localAnchor.trackingState == TrackingState.STOPPED) {
+                    Log.e(TAG, "Anchor created in STOPPED state — will retry next frame")
+                    localAnchor.detach()
+                    anchorInitiated = false
+                    return
+                }
+
                 worldAnchor = localAnchor
                 setLocalWorldPos(wx, wy, wz)
                 poseManager.setSharedAnchor(localAnchor)
@@ -158,8 +179,7 @@ class ArSessionManager(
             activeIdsScratch.clear()
 
             // Frame amortization: process peers in round-robin batches
-            val peerValues = peers.values
-            val peerList = peerValues.toList()  // snapshot for indexed access
+            val peerList = peers.values.toList()  // snapshot for indexed access
             val total = peerList.size
             var processed = 0
 
@@ -171,7 +191,7 @@ class ArSessionManager(
                 // New peers and ghosts are always processed immediately (no amortization)
                 val isNewPeer = !nodeManager.hasPeer(peer.peerId) && !nodeManager.hasGhost(peer.peerId)
                 val isInBudget = processed < PEER_UPDATE_BUDGET ||
-                    ((i - peerUpdateCursor + total) % maxOf(total, 1)) < PEER_UPDATE_BUDGET
+                        ((i - peerUpdateCursor + total) % maxOf(total, 1)) < PEER_UPDATE_BUDGET
 
                 val hasPose = peer.relativeX != 0f || peer.relativeY != 0f || peer.relativeZ != 0f
                 if (!hasPose) {
@@ -238,22 +258,41 @@ class ArSessionManager(
     }
 
     fun resolveCloudAnchor(cloudAnchorId: String) {
-        // Allow re-resolve if anchor ID changed
         if (resolveRequested && this.lastResolvedAnchorId == cloudAnchorId) {
             Log.w("CloudAnchorSync", "Follower: resolve already requested for this ID, ignoring")
             return
         }
+
+        // Don't call into ARCore if we don't have a local anchor yet —
+        // the session hasn't processed any frames, which causes ERROR_INTERNAL.
+        if (worldAnchor == null) {
+            Log.w("CloudAnchorSync", "Follower: no local anchor yet — triggering retry")
+            onResolveRetryNeeded()
+            return
+        }
+
         resolveRequested = true
         lastResolvedAnchorId = cloudAnchorId
-        Log.d("CloudAnchorSync", "Follower: resolveCloudAnchor called with id=$cloudAnchorId")
+        Log.d("CloudAnchorSync", "Follower: resolveCloudAnchor called with id=$cloudAnchorId, tracking=$lastTrackingState")
         cloudAnchorManager.resolveAnchor(cloudAnchorId)
     }
 
-    fun onCloudAnchorResolveFailed() {
+    fun onCloudAnchorResolveFailed(state: CloudAnchorState) {
         resolveRequested = false
         lastResolvedAnchorId = null
-        Log.d(TAG, "Resolve failed — resetting flag so retry is possible")
-        onResolveRetryNeeded()
+
+        val retryable = state.isRetryable()
+        val underRetryLimit = _resolveRetryCount < MAX_RESOLVE_RETRIES
+
+        if (retryable && underRetryLimit) {
+            _resolveRetryCount++
+            Log.d(TAG, "Resolve failed ($state) — retry $_resolveRetryCount/$MAX_RESOLVE_RETRIES")
+            onResolveRetryNeeded()
+        } else {
+            Log.e(TAG, "Resolve failed ($state) — giving up after $_resolveRetryCount retries")
+            _resolveRetryCount = 0
+            onResolvePermanentlyFailed?.invoke(state) ?: onResolveRetryNeeded()
+        }
     }
 
     fun repositionLocalNode() {
@@ -289,8 +328,10 @@ class ArSessionManager(
         resolveRequested = false
         lastResolvedAnchorId = null
         localWorldPosSet = false
+        lastTrackingState = TrackingState.PAUSED
         lastPeerWorldPos.clear()
         Log.d(TAG, "Session state reset")
         localPositionLocked = false
+        _resolveRetryCount = 0
     }
 }

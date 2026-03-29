@@ -26,6 +26,7 @@ import com.meshvisualiser.ui.theme.COLOR_ACK
 import com.meshvisualiser.ui.theme.COLOR_DROP
 import com.meshvisualiser.ui.theme.COLOR_TCP
 import com.meshvisualiser.ui.theme.COLOR_UDP
+import com.google.ar.core.Anchor.CloudAnchorState
 import com.google.ar.core.Config
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.ar.node.AnchorNode
@@ -40,9 +41,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.MyLocation
+import com.meshvisualiser.ar.isRetryable
 
 private const val TAG = "ArScreen"
 private const val ANCHOR_READY_STATUS = "Shared anchor ready"
+private const val MAX_RESOLVE_RETRIES = 5
 
 /**
  * Fires [onBeforeDetach] before the base class tears down Filament resources,
@@ -90,6 +93,7 @@ private fun ArHud(
     cloudAnchorId: String?,
     anchorResolved: Boolean,
     resolveTimedOut: Boolean,
+    resolveFailedState: CloudAnchorState?,
     onSelectPeer: (Long?) -> Unit,
     onSendTcp: () -> Unit,
     onSendUdp: () -> Unit,
@@ -176,14 +180,23 @@ private fun ArHud(
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                                 )
 
-                                // Show skip option after timeout
-                                if (resolveTimedOut) {
+                                // Show skip option after timeout OR permanent failure
+                                if (resolveTimedOut || resolveFailedState != null) {
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        "Taking too long?",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    if (resolveFailedState != null) {
+                                        Text(
+                                            "Sync failed: $resolveFailedState",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    } else {
+                                        Text(
+                                            "Taking too long?",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                     TextButton(onClick = onSkipSync) {
                                         Text("Continue without sync", color = MaterialTheme.colorScheme.error)
                                     }
@@ -461,6 +474,9 @@ fun ArScreen(
     val anchorResolved by viewModel.cloudAnchor.anchorResolved.collectAsStateWithLifecycle()
     val resolveStartTime = remember { mutableStateOf(0L) }
     val resolveTimedOut = remember { mutableStateOf(false) }
+    // Set when ARCore returns a non-retryable error (e.g. ERROR_INTERNAL) so the
+    // UI can surface the escape hatch immediately instead of waiting 60 seconds.
+    val resolveFailedPermanently = remember { mutableStateOf<CloudAnchorState?>(null) }
 
     DisposableEffect(Unit) {
         val window = (context as? android.app.Activity)?.window
@@ -493,23 +509,29 @@ fun ArScreen(
 
     // Follower: resolve cloud anchor when ID arrives from leader
     LaunchedEffect(cloudAnchorId, resolveAttempt.value) {
-        val id = cloudAnchorId ?: run {
-            Log.d("CloudAnchorSync", "Follower: no cloud anchor ID yet")
-            return@LaunchedEffect
-        }
-        if (isLeader) {
-            Log.d("CloudAnchorSync", "Skipping resolve -- this device is leader")
-            return@LaunchedEffect
-        }
-        Log.d("CloudAnchorSync", "Follower: received cloud anchor ID=$id, attempt=${resolveAttempt.value}, waiting 3s...")
-        delay(3000L)
-        val sm = sessionManagerRef[0]
-        if (sm == null) {
-            Log.e("CloudAnchorSync", "Follower: sessionManager is NULL -- will retry in 5s")
+        val id = cloudAnchorId ?: return@LaunchedEffect
+        if (isLeader) return@LaunchedEffect
+
+        // Exponential backoff: 3s, 8s, 13s, 18s, 23s
+        val backoffMs = 3000L + resolveAttempt.value * 5000L
+        delay(backoffMs)
+
+        val sm = sessionManagerRef[0] ?: run {
             delay(5000L)
             resolveAttempt.value++
             return@LaunchedEffect
         }
+
+        var trackingWaitMs = 0
+        while (!sm.isTracking() && trackingWaitMs < 15_000) {
+            delay(500L)
+            trackingWaitMs += 500
+        }
+        if (!sm.isTracking()) {
+            resolveAttempt.value++
+            return@LaunchedEffect
+        }
+
         sm.resolveCloudAnchor(id)
     }
 
@@ -602,8 +624,14 @@ fun ArScreen(
                             sessionManagerRef[0]?.onCloudAnchorResolved(anchor)
                             viewModel.cloudAnchor.onCloudAnchorResolved()
                         },
-                        onResolveFailed = {
-                            sessionManagerRef[0]?.onCloudAnchorResolveFailed()
+                        onResolveFailed = { state ->
+                            sessionManagerRef[0]?.onCloudAnchorResolveFailed(state)
+                            // Update status pill to show retrying rather than failed
+                            if (state.isRetryable()) {
+                                viewModel.cloudAnchor.onCloudAnchorQuality(
+                                    "Waiting for anchor... (retry ${sessionManagerRef[0]?.resolveRetryCount ?: 0}/$MAX_RESOLVE_RETRIES)"
+                                )
+                            }
                         },
                         onError = { msg ->
                             Log.e(TAG, "Cloud anchor error: $msg")
@@ -702,6 +730,12 @@ fun ArScreen(
                             onResolveRetryNeeded = {
                                 resolveAttempt.value++
                                 Log.d("CloudAnchorSync", "Follower: retry triggered, attempt=${resolveAttempt.value}")
+                            },
+                            onResolvePermanentlyFailed = { state ->
+                                Log.e("CloudAnchorSync", "Follower: permanent resolve failure — $state, surfacing escape hatch")
+                                // Trigger the skip UI immediately rather than making the user wait 60s
+                                resolveTimedOut.value = true
+                                resolveFailedPermanently.value = state
                             }
                         )
                         nodeManagerRef[0] = nm
@@ -746,8 +780,10 @@ fun ArScreen(
             onBack = onBack,
             onReposition = { sessionManagerRef[0]?.repositionLocalNode() },
             resolveTimedOut = resolveTimedOut.value,
+            resolveFailedState = resolveFailedPermanently.value,
             onSkipSync = {
                 resolveTimedOut.value = false
+                resolveFailedPermanently.value = null
                 // Force anchorResolved so UI unblocks
                 viewModel.cloudAnchor.onCloudAnchorResolved()
             }
