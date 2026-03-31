@@ -1,10 +1,19 @@
-package main
+package quiz
 
 import "math/rand"
 
+// Question is a generated or static multiple-choice networking quiz item.
+type Question struct {
+	Text        string   `json:"text"`
+	Options     []string `json:"options"`
+	Correct     int      `json:"correct"`
+	Category    string   `json:"category"`
+	Explanation string   `json:"explanation"`
+}
+
 // staticQuestionPool is a large pool of networking concept questions with explanations.
 // The server picks randomly from this pool when the LLM is unavailable or returns bad output.
-var staticQuestionPool = []QuizQuestion{
+var staticQuestionPool = []Question{
 	// ── CSMA/CD & Medium Access ──
 	{
 		Text:        "What does CSMA/CD stand for?",
@@ -462,9 +471,14 @@ var staticQuestionPool = []QuizQuestion{
 
 // pickStaticQuestions returns n randomly selected questions from the static pool.
 // Options within each question are shuffled so the correct answer isn't always index 0.
-func pickStaticQuestions(n int) []QuizQuestion {
-	pool := make([]QuizQuestion, len(staticQuestionPool))
+func PickStaticQuestions(n int) []Question {
+	pool := make([]Question, len(staticQuestionPool))
 	copy(pool, staticQuestionPool)
+	for i := range pool {
+		opts := make([]string, len(pool[i].Options))
+		copy(opts, pool[i].Options)
+		pool[i].Options = opts
+	}
 	rand.Shuffle(len(pool), func(i, j int) { pool[i], pool[j] = pool[j], pool[i] })
 
 	if n > len(pool) {

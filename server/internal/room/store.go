@@ -1,10 +1,12 @@
-package main
+package room
 
 import (
 	"fmt"
 	"sync"
 	"time"
 )
+
+var sgt = time.FixedZone("SGT", 8*60*60)
 
 // PeerSnapshot is a device's view of the session, uploaded periodically.
 type PeerSnapshot struct {
@@ -34,7 +36,7 @@ type NetworkConditions struct {
 }
 
 // Presets for common network conditions.
-var presets = map[string]NetworkConditions{
+var Presets = map[string]NetworkConditions{
 	"perfect":   {LatencyMs: 0, JitterMs: 0, PacketLossPct: 0, BandwidthKbps: 0, ConditionPreset: "perfect"},
 	"wifi":      {LatencyMs: 5, JitterMs: 2, PacketLossPct: 0.5, BandwidthKbps: 0, ConditionPreset: "wifi"},
 	"4g":        {LatencyMs: 50, JitterMs: 20, PacketLossPct: 1, BandwidthKbps: 5000, ConditionPreset: "4g"},
@@ -45,6 +47,18 @@ var presets = map[string]NetworkConditions{
 }
 
 const maxRooms = 500
+
+func (r *Room) deepCopy() Room {
+	cp := *r
+	if r.Snapshots != nil {
+		cp.Snapshots = make(map[string]*PeerSnapshot, len(r.Snapshots))
+		for k, v := range r.Snapshots {
+			snap := *v
+			cp.Snapshots[k] = &snap
+		}
+	}
+	return cp
+}
 
 // Store is the in-memory room store.
 type Store struct {
@@ -60,26 +74,26 @@ func (s *Store) GetOrCreate(code string) (Room, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if r, ok := s.rooms[code]; ok {
-		return *r, nil
+		return r.deepCopy(), nil
 	}
 	if len(s.rooms) >= maxRooms {
 		return Room{}, fmt.Errorf("room limit reached (%d)", maxRooms)
 	}
 	r := &Room{
 		Code:       code,
-		Conditions: presets["perfect"],
+		Conditions: Presets["perfect"],
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
 	s.rooms[code] = r
-	return *r, nil
+	return r.deepCopy(), nil
 }
 
 func (s *Store) Get(code string) (Room, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if r, ok := s.rooms[code]; ok {
-		return *r, true
+		return r.deepCopy(), true
 	}
 	return Room{}, false
 }
@@ -99,7 +113,7 @@ func (s *Store) ListAll() []Room {
 	defer s.mu.RUnlock()
 	out := make([]Room, 0, len(s.rooms))
 	for _, r := range s.rooms {
-		out = append(out, *r)
+		out = append(out, r.deepCopy())
 	}
 	return out
 }
@@ -113,7 +127,7 @@ func (s *Store) SetAnchor(code, anchorID string) (Room, bool) {
 	}
 	r.AnchorID = anchorID
 	r.UpdatedAt = time.Now()
-	return *r, true
+	return r.deepCopy(), true
 }
 
 func (s *Store) SetLeader(code, leaderID string) (Room, bool) {
@@ -125,7 +139,7 @@ func (s *Store) SetLeader(code, leaderID string) (Room, bool) {
 	}
 	r.LeaderID = leaderID
 	r.UpdatedAt = time.Now()
-	return *r, true
+	return r.deepCopy(), true
 }
 
 func (s *Store) SetConditions(code string, cond NetworkConditions) (Room, bool) {
@@ -137,7 +151,7 @@ func (s *Store) SetConditions(code string, cond NetworkConditions) (Room, bool) 
 	}
 	r.Conditions = cond
 	r.UpdatedAt = time.Now()
-	return *r, true
+	return r.deepCopy(), true
 }
 
 func (s *Store) SetSnapshot(code, peerId string, data any) (Room, bool) {
@@ -156,7 +170,7 @@ func (s *Store) SetSnapshot(code, peerId string, data any) (Room, bool) {
 		UpdatedAt: time.Now().In(sgt).Format("2006-01-02T15:04:05+08:00"),
 	}
 	r.UpdatedAt = time.Now()
-	return *r, true
+	return r.deepCopy(), true
 }
 
 func (s *Store) GetSnapshots(code string) ([]PeerSnapshot, bool) {

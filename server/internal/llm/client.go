@@ -1,26 +1,31 @@
-package main
+package llm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/inf2007/inf2007-team07-2026/server/internal/platform"
 )
 
-// LLMConfig holds runtime-updatable LLM connection settings.
-type LLMConfig struct {
+// Config holds runtime-updatable LLM connection settings.
+type Config struct {
 	mu      sync.RWMutex
 	BaseURL string `json:"llm_base_url"`
 	Model   string `json:"llm_model"`
 	APIKey  string `json:"llm_api_key,omitempty"`
 }
 
-func NewLLMConfig() *LLMConfig {
-	cfg := &LLMConfig{
+func NewConfig() *Config {
+	cfg := &Config{
 		BaseURL: "http://localhost:1234",
 		Model:   "default",
 	}
@@ -36,13 +41,13 @@ func NewLLMConfig() *LLMConfig {
 	return cfg
 }
 
-func (c *LLMConfig) Get() (baseURL, model, apiKey string) {
+func (c *Config) Get() (baseURL, model, apiKey string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.BaseURL, c.Model, c.APIKey
 }
 
-func (c *LLMConfig) Update(baseURL, model, apiKey string) {
+func (c *Config) Update(baseURL, model, apiKey string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if baseURL != "" {
@@ -58,31 +63,83 @@ func (c *LLMConfig) Update(baseURL, model, apiKey string) {
 
 // OpenAI-compatible chat completion types.
 
-var llmHTTPClient = &http.Client{Timeout: 60 * time.Second}
+var llmHTTPClient = &http.Client{}
 
-type chatMessage struct {
+type ChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
 type chatRequest struct {
 	Model       string        `json:"model"`
-	Messages    []chatMessage `json:"messages"`
+	Messages    []ChatMessage `json:"messages"`
 	MaxTokens   int           `json:"max_tokens"`
 	Temperature float64       `json:"temperature"`
 }
 
 type chatChoice struct {
-	Message chatMessage `json:"message"`
+	Message ChatMessage `json:"message"`
 }
 
 type chatResponse struct {
 	Choices []chatChoice `json:"choices"`
 }
 
+// isPrivateIP returns true if the IP is in a private/reserved range (RFC1918, link-local, loopback).
+func isPrivateIP(ip net.IP) bool {
+	privateRanges := []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"127.0.0.0/8",
+		"169.254.0.0/16",
+		"::1/128",
+		"fc00::/7",
+		"fe80::/10",
+	}
+	for _, cidr := range privateRanges {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			continue
+		}
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateBaseURL checks that the URL has http/https scheme and does not point to a private IP.
+func ValidateBaseURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("URL scheme must be http or https, got %q", u.Scheme)
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	if ip != nil && isPrivateIP(ip) {
+		return fmt.Errorf("private/reserved IP addresses are not allowed")
+	}
+	if ip == nil {
+		addrs, err := net.LookupIP(host)
+		if err != nil {
+			return fmt.Errorf("cannot resolve host %q: %w", host, err)
+		}
+		for _, addr := range addrs {
+			if isPrivateIP(addr) {
+				return fmt.Errorf("host %q resolves to private IP %s", host, addr)
+			}
+		}
+	}
+	return nil
+}
+
 // callLLM sends a chat completion request and logs prompt/response details.
 // The caller field identifies which endpoint triggered the call (e.g. "narrate", "quiz").
-func callLLM(cfg *LLMConfig, messages []chatMessage, maxTokens int, callers ...string) (string, error) {
+func callLLM(ctx context.Context, cfg *Config, messages []ChatMessage, maxTokens int, callers ...string) (string, error) {
 	caller := "unknown"
 	if len(callers) > 0 {
 		caller = callers[0]
@@ -102,7 +159,7 @@ func callLLM(cfg *LLMConfig, messages []chatMessage, maxTokens int, callers ...s
 		}
 	}
 
-	sgtLog("[llm:%s] calling model=%s msgs=%d system=%d_chars user=%d_chars max_tokens=%d",
+	platform.Logf("[llm:%s] calling model=%s msgs=%d system=%d_chars user=%d_chars max_tokens=%d",
 		caller, model, totalMsgs, systemChars, userChars, maxTokens)
 
 	body := chatRequest{
@@ -118,7 +175,7 @@ func callLLM(cfg *LLMConfig, messages []chatMessage, maxTokens int, callers ...s
 
 	start := time.Now()
 
-	req, err := http.NewRequest("POST", baseURL+"/v1/chat/completions", bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/v1/chat/completions", bytes.NewReader(payload))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -130,33 +187,33 @@ func callLLM(cfg *LLMConfig, messages []chatMessage, maxTokens int, callers ...s
 	resp, err := llmHTTPClient.Do(req)
 	elapsed := time.Since(start)
 	if err != nil {
-		sgtLog("[llm:%s] FAILED after %s: %v", caller, elapsed.Round(time.Millisecond), err)
+		platform.Logf("[llm:%s] FAILED after %s: %v", caller, elapsed.Round(time.Millisecond), err)
 		return "", fmt.Errorf("llm request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		sgtLog("[llm:%s] read error after %s: %v", caller, elapsed.Round(time.Millisecond), err)
+		platform.Logf("[llm:%s] read error after %s: %v", caller, elapsed.Round(time.Millisecond), err)
 		return "", fmt.Errorf("read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		sgtLog("[llm:%s] HTTP %d after %s: %s", caller, resp.StatusCode, elapsed.Round(time.Millisecond), string(respBody[:min(len(respBody), 200)]))
+		platform.Logf("[llm:%s] HTTP %d after %s: %s", caller, resp.StatusCode, elapsed.Round(time.Millisecond), string(respBody[:min(len(respBody), 200)]))
 		return "", fmt.Errorf("llm returned %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 200)]))
 	}
 
 	var cr chatResponse
 	if err := json.Unmarshal(respBody, &cr); err != nil {
-		sgtLog("[llm:%s] parse error after %s: %v", caller, elapsed.Round(time.Millisecond), err)
+		platform.Logf("[llm:%s] parse error after %s: %v", caller, elapsed.Round(time.Millisecond), err)
 		return "", fmt.Errorf("parse response: %w", err)
 	}
 	if len(cr.Choices) == 0 {
-		sgtLog("[llm:%s] no choices after %s", caller, elapsed.Round(time.Millisecond))
+		platform.Logf("[llm:%s] no choices after %s", caller, elapsed.Round(time.Millisecond))
 		return "", fmt.Errorf("no choices in response")
 	}
 
 	content := cr.Choices[0].Message.Content
-	sgtLog("[llm:%s] OK %s response=%d_chars", caller, elapsed.Round(time.Millisecond), len(content))
+	platform.Logf("[llm:%s] OK %s response=%d_chars", caller, elapsed.Round(time.Millisecond), len(content))
 	return content, nil
 }

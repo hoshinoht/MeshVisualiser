@@ -1,22 +1,17 @@
-package main
+package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
 	"time"
-)
 
-// extendWriteDeadline pushes the HTTP write deadline out for slow LLM responses.
-// Falls back silently if the ResponseWriter doesn't support it.
-func extendWriteDeadline(w http.ResponseWriter, d time.Duration) {
-	rc := http.NewResponseController(w)
-	if err := rc.SetWriteDeadline(time.Now().Add(d)); err != nil {
-		sgtLog("warning: could not extend write deadline: %v", err)
-	}
-}
+	"github.com/inf2007/inf2007-team07-2026/server/internal/cache"
+	"github.com/inf2007/inf2007-team07-2026/server/internal/llm"
+	"github.com/inf2007/inf2007-team07-2026/server/internal/platform"
+	"github.com/inf2007/inf2007-team07-2026/server/internal/quiz"
+)
 
 // System prompts.
 
@@ -107,17 +102,9 @@ type QuizRequest struct {
 	MeshState string `json:"mesh_state"`
 }
 
-type QuizQuestion struct {
-	Text        string   `json:"text"`
-	Options     []string `json:"options"`
-	Correct     int      `json:"correct"`
-	Category    string   `json:"category"`
-	Explanation string   `json:"explanation"`
-}
-
 type QuizResponse struct {
-	Questions []QuizQuestion `json:"questions"`
-	Source    string         `json:"source"` // "ai" or "static"
+	Questions []quiz.Question `json:"questions"`
+	Source    string          `json:"source"` // "ai" or "static"
 }
 
 type SummaryRequest struct {
@@ -130,62 +117,33 @@ type SummaryResponse struct {
 	Summary string `json:"summary"`
 }
 
-// isPrivateIP returns true if the IP is in a private/reserved range (RFC1918, link-local, loopback).
-func isPrivateIP(ip net.IP) bool {
-	privateRanges := []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"127.0.0.0/8",
-		"169.254.0.0/16",
-		"::1/128",
-		"fc00::/7",
-		"fe80::/10",
-	}
-	for _, cidr := range privateRanges {
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			continue
-		}
-		if network.Contains(ip) {
-			return true
-		}
-	}
-	return false
+type SummaryCache = cache.TTLCache[SummaryResponse]
+
+func NewSummaryCache(ttl time.Duration, stop <-chan struct{}) *SummaryCache {
+	return cache.NewTTLCache[SummaryResponse](ttl, stop)
 }
 
-// validateLLMBaseURL checks that the URL has http/https scheme and does not point to a private IP.
-func validateLLMBaseURL(rawURL string) error {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
+func SummaryCacheKey(req SummaryRequest) string {
+	extra := ""
+	if req.QuizScore != nil && req.QuizTotal != nil {
+		extra = fmt.Sprintf("%d/%d", *req.QuizScore, *req.QuizTotal)
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("URL scheme must be http or https, got %q", u.Scheme)
-	}
-	host := u.Hostname()
-	ip := net.ParseIP(host)
-	if ip != nil && isPrivateIP(ip) {
-		return fmt.Errorf("private/reserved IP addresses are not allowed")
-	}
-	// If it's a hostname, resolve and check all IPs
-	if ip == nil {
-		addrs, err := net.LookupIP(host)
-		if err != nil {
-			return fmt.Errorf("cannot resolve host %q: %w", host, err)
-		}
-		for _, addr := range addrs {
-			if isPrivateIP(addr) {
-				return fmt.Errorf("host %q resolves to private IP %s", host, addr)
-			}
-		}
-	}
-	return nil
+	return cache.HashKey(req.MeshState, extra)
+}
+
+type QuizCache = cache.TTLCache[QuizResponse]
+
+func NewQuizCache(ttl time.Duration, stop <-chan struct{}) *QuizCache {
+	return cache.NewTTLCache[QuizResponse](ttl, stop)
+}
+
+func QuizCacheKey(meshState string) string {
+	return cache.HashKey(meshState)
 }
 
 // Route registration.
 
-func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryCache, quizCache *QuizCache) {
+func RegisterAIRoutes(mux *http.ServeMux, cfg *llm.Config, queue *llm.LLMQueue, summaryCache *SummaryCache, quizCache *QuizCache) {
 
 	// GET /ai/config
 	mux.HandleFunc("GET /ai/config", func(w http.ResponseWriter, r *http.Request) {
@@ -215,19 +173,18 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 			return
 		}
 		if body.BaseURL != "" {
-			if err := validateLLMBaseURL(body.BaseURL); err != nil {
+			if err := llm.ValidateBaseURL(body.BaseURL); err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid base URL: %v", err)})
 				return
 			}
 		}
 		cfg.Update(body.BaseURL, body.Model, body.APIKey)
-		sgtLog("LLM config updated: base_url=%s model=%s has_key=%v", body.BaseURL, body.Model, body.APIKey != "")
+		platform.Logf("LLM config updated: base_url=%s model=%s has_key=%v", body.BaseURL, body.Model, body.APIKey != "")
 		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 	})
 
 	// POST /ai/narrate
 	mux.HandleFunc("POST /ai/narrate", func(w http.ResponseWriter, r *http.Request) {
-		extendWriteDeadline(w, 90*time.Second)
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req NarrateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -246,13 +203,19 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 		userPrompt := fmt.Sprintf("Current mesh state:\n%s\n\nRecent protocol events to explain:\n%s", req.MeshState, eventText)
 
-		content, err := callLLM(cfg, []chatMessage{
+		sfKey := cache.HashKey("narrate", userPrompt)
+		content, err := queue.Call(r.Context(), sfKey, []llm.ChatMessage{
 			{Role: "system", Content: narratorSystemPrompt},
 			{Role: "user", Content: userPrompt},
 		}, 200, "narrate")
 
 		if err != nil {
-			sgtLog("narrate LLM error: %v", err)
+			if errors.Is(err, llm.ErrQueueFull) {
+				w.Header().Set("Retry-After", "10")
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "server busy, try again shortly"})
+				return
+			}
+			platform.Logf("narrate LLM error: %v", err)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
@@ -265,7 +228,6 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/what-if
 	mux.HandleFunc("POST /ai/what-if", func(w http.ResponseWriter, r *http.Request) {
-		extendWriteDeadline(w, 90*time.Second)
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req WhatIfRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -277,22 +239,28 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 			return
 		}
 
-		messages := []chatMessage{
+		messages := []llm.ChatMessage{
 			{Role: "system", Content: whatIfSystemPrompt},
 			{Role: "user", Content: "Current mesh state:\n" + req.MeshState},
 			{Role: "assistant", Content: "I can see your mesh network state. What would you like to explore?"},
 		}
 
 		for _, h := range req.History {
-			messages = append(messages, chatMessage{Role: "user", Content: h.Question})
-			messages = append(messages, chatMessage{Role: "assistant", Content: h.Answer})
+			messages = append(messages, llm.ChatMessage{Role: "user", Content: h.Question})
+			messages = append(messages, llm.ChatMessage{Role: "assistant", Content: h.Answer})
 		}
 
-		messages = append(messages, chatMessage{Role: "user", Content: req.Question})
+		messages = append(messages, llm.ChatMessage{Role: "user", Content: req.Question})
 
-		content, err := callLLM(cfg, messages, 400, "what-if")
+		sfKey := cache.HashKey("what-if", req.Question, req.MeshState)
+		content, err := queue.Call(r.Context(), sfKey, messages, 400, "what-if")
 		if err != nil {
-			sgtLog("what-if LLM error: %v", err)
+			if errors.Is(err, llm.ErrQueueFull) {
+				w.Header().Set("Retry-After", "10")
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "server busy, try again shortly"})
+				return
+			}
+			platform.Logf("what-if LLM error: %v", err)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
@@ -302,7 +270,6 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/summary (cached)
 	mux.HandleFunc("POST /ai/summary", func(w http.ResponseWriter, r *http.Request) {
-		extendWriteDeadline(w, 90*time.Second)
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req SummaryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -313,7 +280,7 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 		// Check cache first
 		cacheKey := SummaryCacheKey(req)
 		if cached, ok := summaryCache.Get(cacheKey); ok {
-			sgtLog("summary cache hit")
+			platform.Logf("summary cache hit")
 			writeJSON(w, http.StatusOK, cached)
 			return
 		}
@@ -323,13 +290,18 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 			userContent += fmt.Sprintf("\n\nQuiz results: %d/%d correct", *req.QuizScore, *req.QuizTotal)
 		}
 
-		content, err := callLLM(cfg, []chatMessage{
+		content, err := queue.Call(r.Context(), cacheKey, []llm.ChatMessage{
 			{Role: "system", Content: summarySystemPrompt},
 			{Role: "user", Content: userContent},
 		}, 600, "summary")
 
 		if err != nil {
-			sgtLog("summary LLM error: %v", err)
+			if errors.Is(err, llm.ErrQueueFull) {
+				w.Header().Set("Retry-After", "10")
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "server busy, try again shortly"})
+				return
+			}
+			platform.Logf("summary LLM error: %v", err)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
@@ -341,7 +313,6 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 
 	// POST /ai/quiz — LLM-generated session-aware quiz, static fallback
 	mux.HandleFunc("POST /ai/quiz", func(w http.ResponseWriter, r *http.Request) {
-		extendWriteDeadline(w, 90*time.Second)
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
 		var req QuizRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -352,54 +323,64 @@ func registerAIRoutes(mux *http.ServeMux, cfg *LLMConfig, summaryCache *SummaryC
 		// Check quiz cache first
 		qCacheKey := QuizCacheKey(req.MeshState)
 		if cached, ok := quizCache.Get(qCacheKey); ok {
-			sgtLog("quiz cache hit (%d questions, source=%s)", len(cached.Questions), cached.Source)
+			platform.Logf("quiz cache hit (%d questions, source=%s)", len(cached.Questions), cached.Source)
 			writeJSON(w, http.StatusOK, cached)
 			return
 		}
 
 		// Try LLM first
 		userPrompt := "Here is the student's current mesh network session data:\n" + req.MeshState
-		content, err := callLLM(cfg, []chatMessage{
+		content, err := queue.Call(r.Context(), qCacheKey, []llm.ChatMessage{
 			{Role: "system", Content: quizSystemPrompt},
 			{Role: "user", Content: userPrompt},
 		}, 2000, "quiz")
 
 		if err == nil {
-			var questions []QuizQuestion
+			var questions []quiz.Question
 			if parseErr := json.Unmarshal([]byte(content), &questions); parseErr == nil {
-				valid := make([]QuizQuestion, 0, len(questions))
+				valid := make([]quiz.Question, 0, len(questions))
 				for _, q := range questions {
 					if len(q.Options) == 4 && q.Correct >= 0 && q.Correct < 4 && q.Text != "" {
 						valid = append(valid, q)
 					}
 				}
 				if len(valid) >= 5 {
-					sgtLog("quiz: LLM generated %d valid questions", len(valid))
+					platform.Logf("quiz: LLM generated %d valid questions", len(valid))
 					qResp := QuizResponse{Questions: valid, Source: "ai"}
 					quizCache.Set(qCacheKey, qResp)
 					writeJSON(w, http.StatusOK, qResp)
 					return
 				}
-				sgtLog("quiz: LLM produced only %d valid questions, falling back to static", len(valid))
+				platform.Logf("quiz: LLM produced only %d valid questions, falling back to static", len(valid))
 			} else {
-				sgtLog("quiz: LLM parse error: %v", parseErr)
+				platform.Logf("quiz: LLM parse error: %v", parseErr)
 			}
 		} else {
-			sgtLog("quiz: LLM error: %v, falling back to static", err)
+			if errors.Is(err, llm.ErrQueueFull) {
+				w.Header().Set("Retry-After", "10")
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "server busy, try again shortly"})
+				return
+			}
+			platform.Logf("quiz: LLM error: %v, falling back to static", err)
 		}
 
 		// Fallback: static question pool
-		picked := pickStaticQuestions(10)
+		picked := quiz.PickStaticQuestions(10)
 		writeJSON(w, http.StatusOK, QuizResponse{Questions: picked, Source: "static"})
 	})
 
 	// POST /ai/test
 	mux.HandleFunc("POST /ai/test", func(w http.ResponseWriter, r *http.Request) {
-		extendWriteDeadline(w, 90*time.Second)
-		content, err := callLLM(cfg, []chatMessage{
+		sfKey := cache.HashKey("test")
+		content, err := queue.Call(r.Context(), sfKey, []llm.ChatMessage{
 			{Role: "user", Content: "Say 'OK' if you can hear me."},
-		}, 10)
+		}, 10, "test")
 		if err != nil {
+			if errors.Is(err, llm.ErrQueueFull) {
+				w.Header().Set("Retry-After", "10")
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "server busy, try again shortly"})
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}

@@ -1,10 +1,12 @@
-package main
+package httpapi
 
 import (
 	"encoding/json"
 	"net/http"
 	"strings"
 	"unicode"
+
+	"github.com/inf2007/inf2007-team07-2026/server/internal/room"
 )
 
 func isValidRoomCode(code string) bool {
@@ -19,7 +21,7 @@ func isValidRoomCode(code string) bool {
 	return true
 }
 
-func registerRoomRoutes(mux *http.ServeMux, store *Store) {
+func RegisterRoomRoutes(mux *http.ServeMux, store *room.Store) {
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -27,7 +29,7 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 
 	// List presets
 	mux.HandleFunc("GET /presets", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, presets)
+		writeJSON(w, http.StatusOK, room.Presets)
 	})
 
 	// List all rooms
@@ -216,13 +218,13 @@ func registerRoomRoutes(mux *http.ServeMux, store *Store) {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 512*1024)
-		var cond NetworkConditions
+		var cond room.NetworkConditions
 		if err := json.NewDecoder(r.Body).Decode(&cond); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 			return
 		}
 		if cond.ConditionPreset != "" {
-			if p, ok := presets[strings.ToLower(cond.ConditionPreset)]; ok {
+			if p, ok := room.Presets[strings.ToLower(cond.ConditionPreset)]; ok {
 				cond = p
 			}
 		}

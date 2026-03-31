@@ -1,9 +1,8 @@
-package main
+package cache
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -22,11 +21,18 @@ type TTLCache[T any] struct {
 	ttl     time.Duration
 }
 
-func NewTTLCache[T any](ttl time.Duration) *TTLCache[T] {
+func NewTTLCache[T any](ttl time.Duration, stop <-chan struct{}) *TTLCache[T] {
 	c := &TTLCache[T]{entries: make(map[string]cacheEntry[T]), ttl: ttl}
 	go func() {
-		for range time.Tick(10 * time.Minute) {
-			c.evict()
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				c.evict()
+			case <-stop:
+				return
+			}
 		}
 	}()
 	return c
@@ -68,39 +74,11 @@ func (c *TTLCache[T]) Len() int {
 
 // ── Key helpers ──
 
-func hashKey(parts ...string) string {
+func HashKey(parts ...string) string {
 	h := sha256.New()
 	for _, p := range parts {
 		h.Write([]byte(p))
 		h.Write([]byte("|"))
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// ── Typed cache constructors ──
-
-// SummaryCache caches LLM-generated session summaries.
-type SummaryCache = TTLCache[SummaryResponse]
-
-func NewSummaryCache(ttl time.Duration) *SummaryCache {
-	return NewTTLCache[SummaryResponse](ttl)
-}
-
-func SummaryCacheKey(req SummaryRequest) string {
-	extra := ""
-	if req.QuizScore != nil && req.QuizTotal != nil {
-		extra = fmt.Sprintf("%d/%d", *req.QuizScore, *req.QuizTotal)
-	}
-	return hashKey(req.MeshState, extra)
-}
-
-// QuizCache caches LLM-generated quiz responses.
-type QuizCache = TTLCache[QuizResponse]
-
-func NewQuizCache(ttl time.Duration) *QuizCache {
-	return NewTTLCache[QuizResponse](ttl)
-}
-
-func QuizCacheKey(meshState string) string {
-	return hashKey(meshState)
 }

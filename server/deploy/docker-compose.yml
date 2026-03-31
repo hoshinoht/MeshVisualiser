@@ -1,6 +1,8 @@
 services:
   mesh-server:
-    build: .
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     container_name: mesh-server
     ports:
       - "${HOST_PORT:-8080}:8080"
