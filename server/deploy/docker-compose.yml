@@ -10,7 +10,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234}
-      - LLM_MODEL=${LLM_MODEL:-qwen3-8b}
+      - LLM_MODEL=${LLM_MODEL:-qwen/qwen3.5-9b}
       - MESH_API_KEY=${MESH_API_KEY:-}
     restart: unless-stopped
 

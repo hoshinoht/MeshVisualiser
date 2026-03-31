@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/inf2007/inf2007-team07-2026/server/internal/cache"
@@ -16,60 +17,89 @@ import (
 // System prompts.
 
 const narratorSystemPrompt = `You are a networking protocol tutor embedded in a mesh networking education app.
-The student is running a live peer-to-peer mesh and you observe protocol events in real-time.
+You will receive the current mesh state and a short list of recent protocol events.
 
-When given protocol events, provide a SHORT (1-3 sentence) educational explanation of:
-1. What just happened technically
-2. Why it happened (cause)
-3. What this teaches about real-world networking
+Write one short overlay explanation for the student.
 
-Use the student's actual data (peer names, RTT values, packet numbers).
-Be concise — this appears as an overlay on their screen.
-Tone: friendly, informative, like a lab assistant looking over their shoulder.`
+Rules:
+- Plain text only. No markdown.
+- 1-2 sentences only.
+- Maximum 55 words.
+- Explain what happened, why it happened, and why it matters.
+- Use only facts from the input.
+- Mention at most two concrete details from the input.
+- Do not invent peer names, RTT values, packet counts, or causes.
+- If the exact cause is uncertain, give the most likely explanation briefly.`
 
 const whatIfSystemPrompt = `You are a networking lab assistant. The student has a live mesh network and wants to explore
-"what if" scenarios. You have their current mesh state below.
+"what if" scenarios.
 
-Answer their question by:
-1. Explaining what would theoretically happen, referencing their ACTUAL mesh data
-2. If possible, suggest a hands-on experiment they can try with specific parameter changes
-3. Connect to real-world networking concepts
+Answer the student's question using only the supplied mesh state and conversation history.
 
-Keep answers concise (3-5 sentences). Use their peer names and actual RTT/loss values.
-If suggesting an experiment, format as: "Try this: [specific action]"`
+Rules:
+- Plain text only.
+- Maximum 120 words.
+- 2-4 short paragraphs.
+- First explain what would likely happen.
+- Then explain why, using the current mesh state.
+- If useful, end with: "Try this: ...".
+- Use real peer names and metrics only if they are present in the input.
+- If the answer cannot be inferred from the given state, say what is unknown instead of guessing.`
 
 const summarySystemPrompt = `You are a networking education tutor reviewing a student's mesh networking lab session.
-Generate a personalized learning summary that:
+Write a concise personalized summary using only the supplied session data.
 
-1. Summarizes what they did (duration, peers, protocols used)
-2. Highlights 2-3 key networking concepts they experienced firsthand
-3. Explains what they learned from specific events (retransmissions = TCP reliability, collisions = shared medium access)
-4. Suggests 1-2 things to try next session
+Format exactly:
 
-Reference their actual data. Be encouraging but educational.
-Format with clear sections and bullet points. Keep it under 300 words.`
+## Session
+- ...
+## Concepts
+- ...
+- ...
+## Next
+- ...
+- ...
+
+Rules:
+- Markdown headings and bullet points only.
+- 160-220 words total.
+- Mention only concepts supported by the session data.
+- Use concrete session facts where available.
+- Do not repeat the same metric more than once.
+- Do not invent events or outcomes.`
 
 const quizSystemPrompt = `You are a networking quiz generator for a mesh networking education app.
-The student has a live peer-to-peer mesh network. Use their ACTUAL session data to generate
-personalised multiple-choice questions that test their understanding of what is happening.
+Generate valid JSON only.
+Do not use markdown.
+Do not use code fences.
+Do not add any text before or after the JSON.
 
-Generate exactly 10 questions as a JSON array. Mix these categories:
-- SESSION questions (3-4): Ask about their specific mesh state — topology type, peer count,
-  leader identity, RTT values, packet loss rates, collision counts, protocols used.
-  Use the real numbers from their session.
-- CONCEPT questions (4-5): Ask about networking concepts relevant to what they've experienced.
-  For example, if they had collisions, ask about CSMA/CD. If they used TCP, ask about
-  acknowledgments and retransmission. If they have a star topology, ask about its properties.
-- SCENARIO questions (2-3): "What would happen if..." questions based on their current state.
-  E.g. "If your TCP packet loss increased from 10% to 50%, what would you observe?"
+Return exactly this object shape:
+{"questions":[...]}
 
-Each question MUST have exactly 4 options with exactly 1 correct answer.
-Each question MUST include a short explanation (1-2 sentences) of why the correct answer is right.
+Generate exactly 10 multiple-choice questions.
 
-Respond with ONLY a JSON array, no markdown fences, no extra text. Each element:
+Each question object must be:
 {"text":"question text","options":["A","B","C","D"],"correct":0,"category":"SESSION|CONCEPT|SCENARIO","explanation":"Why the answer is correct"}
 
-where "correct" is the 0-based index of the correct option.`
+Rules:
+- Exactly 4 options per question.
+- Exactly 1 correct answer.
+- "correct" must be 0, 1, 2, or 3.
+- Aim for 3-4 SESSION, 4-5 CONCEPT, and 2-3 SCENARIO questions when the input supports it.
+- Use SESSION questions only when the needed facts are clearly present in the input.
+- If data is sparse, prefer CONCEPT and SCENARIO questions instead of inventing details.
+- Use only facts present in the input.
+- Do not invent peer names, RTT values, loss values, leader identity, or topology.
+- Keep each explanation to 1-2 short sentences.`
+
+const (
+	narratorTemperature = 0.45
+	whatIfTemperature   = 0.65
+	summaryTemperature  = 0.55
+	quizTemperature     = 0.15
+	testTemperature     = 0.0
+)
 
 // Request/response types for AI endpoints.
 
@@ -204,10 +234,10 @@ func RegisterAIRoutes(mux *http.ServeMux, cfg *llm.Config, queue *llm.LLMQueue, 
 		userPrompt := fmt.Sprintf("Current mesh state:\n%s\n\nRecent protocol events to explain:\n%s", req.MeshState, eventText)
 
 		sfKey := cache.HashKey("narrate", userPrompt)
-		content, err := queue.Call(r.Context(), sfKey, []llm.ChatMessage{
+		content, err := queue.CallWithOptions(r.Context(), sfKey, []llm.ChatMessage{
 			{Role: "system", Content: narratorSystemPrompt},
 			{Role: "user", Content: userPrompt},
-		}, 200, "narrate")
+		}, llm.GenerationOptions{MaxTokens: 200, Temperature: narratorTemperature, Caller: "narrate"})
 
 		if err != nil {
 			if errors.Is(err, llm.ErrQueueFull) {
@@ -253,7 +283,7 @@ func RegisterAIRoutes(mux *http.ServeMux, cfg *llm.Config, queue *llm.LLMQueue, 
 		messages = append(messages, llm.ChatMessage{Role: "user", Content: req.Question})
 
 		sfKey := cache.HashKey("what-if", req.Question, req.MeshState)
-		content, err := queue.Call(r.Context(), sfKey, messages, 400, "what-if")
+		content, err := queue.CallWithOptions(r.Context(), sfKey, messages, llm.GenerationOptions{MaxTokens: 400, Temperature: whatIfTemperature, Caller: "what-if"})
 		if err != nil {
 			if errors.Is(err, llm.ErrQueueFull) {
 				w.Header().Set("Retry-After", "10")
@@ -290,10 +320,10 @@ func RegisterAIRoutes(mux *http.ServeMux, cfg *llm.Config, queue *llm.LLMQueue, 
 			userContent += fmt.Sprintf("\n\nQuiz results: %d/%d correct", *req.QuizScore, *req.QuizTotal)
 		}
 
-		content, err := queue.Call(r.Context(), cacheKey, []llm.ChatMessage{
+		content, err := queue.CallWithOptions(r.Context(), cacheKey, []llm.ChatMessage{
 			{Role: "system", Content: summarySystemPrompt},
 			{Role: "user", Content: userContent},
-		}, 600, "summary")
+		}, llm.GenerationOptions{MaxTokens: 600, Temperature: summaryTemperature, Caller: "summary"})
 
 		if err != nil {
 			if errors.Is(err, llm.ErrQueueFull) {
@@ -330,14 +360,15 @@ func RegisterAIRoutes(mux *http.ServeMux, cfg *llm.Config, queue *llm.LLMQueue, 
 
 		// Try LLM first
 		userPrompt := "Here is the student's current mesh network session data:\n" + req.MeshState
-		content, err := queue.Call(r.Context(), qCacheKey, []llm.ChatMessage{
+		content, err := queue.CallWithOptions(r.Context(), qCacheKey, []llm.ChatMessage{
 			{Role: "system", Content: quizSystemPrompt},
 			{Role: "user", Content: userPrompt},
-		}, 2000, "quiz")
+		}, llm.GenerationOptions{MaxTokens: 2000, Temperature: quizTemperature, Caller: "quiz"})
 
 		if err == nil {
 			var questions []quiz.Question
-			if parseErr := json.Unmarshal([]byte(content), &questions); parseErr == nil {
+			trimmed := strings.TrimSpace(content)
+			if parseErr := json.Unmarshal([]byte(trimmed), &questions); parseErr == nil {
 				valid := make([]quiz.Question, 0, len(questions))
 				for _, q := range questions {
 					if len(q.Options) == 4 && q.Correct >= 0 && q.Correct < 4 && q.Text != "" {
@@ -353,7 +384,27 @@ func RegisterAIRoutes(mux *http.ServeMux, cfg *llm.Config, queue *llm.LLMQueue, 
 				}
 				platform.Logf("quiz: LLM produced only %d valid questions, falling back to static", len(valid))
 			} else {
-				platform.Logf("quiz: LLM parse error: %v", parseErr)
+				var wrapped struct {
+					Questions []quiz.Question `json:"questions"`
+				}
+				if wrappedErr := json.Unmarshal([]byte(trimmed), &wrapped); wrappedErr == nil {
+					valid := make([]quiz.Question, 0, len(wrapped.Questions))
+					for _, q := range wrapped.Questions {
+						if len(q.Options) == 4 && q.Correct >= 0 && q.Correct < 4 && q.Text != "" {
+							valid = append(valid, q)
+						}
+					}
+					if len(valid) >= 5 {
+						platform.Logf("quiz: LLM generated %d valid wrapped questions", len(valid))
+						qResp := QuizResponse{Questions: valid, Source: "ai"}
+						quizCache.Set(qCacheKey, qResp)
+						writeJSON(w, http.StatusOK, qResp)
+						return
+					}
+					platform.Logf("quiz: LLM produced only %d valid wrapped questions, falling back to static", len(valid))
+				} else {
+					platform.Logf("quiz: LLM parse error: %v / wrapped parse error: %v", parseErr, wrappedErr)
+				}
 			}
 		} else {
 			if errors.Is(err, llm.ErrQueueFull) {
@@ -372,9 +423,9 @@ func RegisterAIRoutes(mux *http.ServeMux, cfg *llm.Config, queue *llm.LLMQueue, 
 	// POST /ai/test
 	mux.HandleFunc("POST /ai/test", func(w http.ResponseWriter, r *http.Request) {
 		sfKey := cache.HashKey("test")
-		content, err := queue.Call(r.Context(), sfKey, []llm.ChatMessage{
+		content, err := queue.CallWithOptions(r.Context(), sfKey, []llm.ChatMessage{
 			{Role: "user", Content: "Say 'OK' if you can hear me."},
-		}, 10, "test")
+		}, llm.GenerationOptions{MaxTokens: 10, Temperature: testTemperature, Caller: "test"})
 		if err != nil {
 			if errors.Is(err, llm.ErrQueueFull) {
 				w.Header().Set("Retry-After", "10")

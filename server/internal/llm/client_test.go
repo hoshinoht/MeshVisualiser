@@ -1,9 +1,13 @@
 package llm
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +25,55 @@ func TestCallLLM_HappyPath(t *testing.T) {
 	}
 	if content != "hello" {
 		t.Fatalf("content = %q, want %q", content, "hello")
+	}
+}
+
+func TestCallLLMWithOptions_SendsTemperature(t *testing.T) {
+	srv := testutil.FakeLLMFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if got, ok := body["temperature"].(float64); !ok || got != 0.15 {
+			t.Fatalf("temperature = %v, want 0.15", body["temperature"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	})
+	defer srv.Close()
+
+	content, err := callLLMWithOptions(context.Background(), &Config{BaseURL: srv.URL, Model: "test-model"}, []ChatMessage{{Role: "user", Content: "hi"}}, GenerationOptions{MaxTokens: 10, Temperature: 0.15, Caller: "test"})
+	if err != nil {
+		t.Fatalf("callLLMWithOptions error = %v", err)
+	}
+	if content != "ok" {
+		t.Fatalf("content = %q, want ok", content)
+	}
+}
+
+func TestCallLLMWithOptions_LogsTokensPerSecondWhenUsagePresent(t *testing.T) {
+	srv := testutil.FakeLLMFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":12,"completion_tokens":8,"total_tokens":20}}`))
+	})
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	prevWriter := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prevWriter)
+
+	_, err := callLLMWithOptions(context.Background(), &Config{BaseURL: srv.URL, Model: "test-model"}, []ChatMessage{{Role: "user", Content: "hi"}}, GenerationOptions{MaxTokens: 10, Temperature: 0.15, Caller: "test"})
+	if err != nil {
+		t.Fatalf("callLLMWithOptions error = %v", err)
+	}
+
+	logs := buf.String()
+	if !strings.Contains(logs, "tok/s=") {
+		t.Fatalf("logs = %q, want tok/s entry", logs)
+	}
+	if !strings.Contains(logs, "completion=8") {
+		t.Fatalf("logs = %q, want completion token count", logs)
 	}
 }
 
