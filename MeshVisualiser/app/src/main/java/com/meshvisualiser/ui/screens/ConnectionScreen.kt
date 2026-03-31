@@ -1,8 +1,12 @@
 package com.meshvisualiser.ui.screens
 
+import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -236,10 +240,20 @@ fun ConnectionScreen(
                                 onEnableAction = { type ->
                                     when (type) {
                                         HardwareType.BLUETOOTH -> {
-                                            val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-                                            try {
-                                                context.startActivity(intent)
-                                            } catch (_: Exception) {
+                                            val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                                ContextCompat.checkSelfPermission(
+                                                    context, Manifest.permission.BLUETOOTH_CONNECT
+                                                ) == PackageManager.PERMISSION_GRANTED
+                                            } else true
+
+                                            if (hasPermission) {
+                                                val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                                                try {
+                                                    context.startActivity(intent)
+                                                } catch (_: Exception) {
+                                                    context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                                                }
+                                            } else {
                                                 context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                                             }
                                         }
