@@ -172,7 +172,7 @@ func TestQuiz_HappyPath(t *testing.T) {
 			Explanation: "Because.",
 		})
 	}
-	qsJSON, err := json.Marshal(qs)
+	qsJSON, err := json.Marshal(map[string]any{"questions": qs})
 	if err != nil {
 		t.Fatalf("marshal quiz JSON: %v", err)
 	}

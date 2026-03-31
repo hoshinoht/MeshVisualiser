@@ -24,10 +24,18 @@ type Config struct {
 	APIKey  string `json:"llm_api_key,omitempty"`
 }
 
+type GenerationOptions struct {
+	MaxTokens   int
+	Temperature float64
+	Caller      string
+}
+
+const defaultTemperature = 0.7
+
 func NewConfig() *Config {
 	cfg := &Config{
 		BaseURL: "http://localhost:1234",
-		Model:   "default",
+		Model:   "qwen/qwen3.5-9b",
 	}
 	if v := os.Getenv("LLM_BASE_URL"); v != "" {
 		cfg.BaseURL = v
@@ -81,8 +89,15 @@ type chatChoice struct {
 	Message ChatMessage `json:"message"`
 }
 
+type chatUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 type chatResponse struct {
 	Choices []chatChoice `json:"choices"`
+	Usage   *chatUsage   `json:"usage,omitempty"`
 }
 
 // isPrivateIP returns true if the IP is in a private/reserved range (RFC1918, link-local, loopback).
@@ -137,12 +152,29 @@ func ValidateBaseURL(rawURL string) error {
 	return nil
 }
 
-// callLLM sends a chat completion request and logs prompt/response details.
-// The caller field identifies which endpoint triggered the call (e.g. "narrate", "quiz").
+// callLLM sends a chat completion request using the legacy defaults.
 func callLLM(ctx context.Context, cfg *Config, messages []ChatMessage, maxTokens int, callers ...string) (string, error) {
 	caller := "unknown"
 	if len(callers) > 0 {
 		caller = callers[0]
+	}
+	return callLLMWithOptions(ctx, cfg, messages, GenerationOptions{
+		MaxTokens:   maxTokens,
+		Temperature: defaultTemperature,
+		Caller:      caller,
+	})
+}
+
+// callLLMWithOptions sends a chat completion request and logs prompt/response details.
+// The caller field identifies which endpoint triggered the call (e.g. "narrate", "quiz").
+func callLLMWithOptions(ctx context.Context, cfg *Config, messages []ChatMessage, opts GenerationOptions) (string, error) {
+	caller := opts.Caller
+	if caller == "" {
+		caller = "unknown"
+	}
+	temperature := opts.Temperature
+	if temperature < 0 {
+		temperature = defaultTemperature
 	}
 
 	baseURL, model, apiKey := cfg.Get()
@@ -159,14 +191,14 @@ func callLLM(ctx context.Context, cfg *Config, messages []ChatMessage, maxTokens
 		}
 	}
 
-	platform.Logf("[llm:%s] calling model=%s msgs=%d system=%d_chars user=%d_chars max_tokens=%d",
-		caller, model, totalMsgs, systemChars, userChars, maxTokens)
+	platform.Logf("[llm:%s] calling model=%s msgs=%d system=%d_chars user=%d_chars max_tokens=%d temp=%.2f",
+		caller, model, totalMsgs, systemChars, userChars, opts.MaxTokens, temperature)
 
 	body := chatRequest{
 		Model:       model,
 		Messages:    messages,
-		MaxTokens:   maxTokens,
-		Temperature: 0.7,
+		MaxTokens:   opts.MaxTokens,
+		Temperature: temperature,
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -214,6 +246,30 @@ func callLLM(ctx context.Context, cfg *Config, messages []ChatMessage, maxTokens
 	}
 
 	content := cr.Choices[0].Message.Content
-	platform.Logf("[llm:%s] OK %s response=%d_chars", caller, elapsed.Round(time.Millisecond), len(content))
+	if cr.Usage != nil {
+		if cr.Usage.CompletionTokens > 0 && elapsed > 0 {
+			tokensPerSecond := float64(cr.Usage.CompletionTokens) / elapsed.Seconds()
+			platform.Logf("[llm:%s] OK %s response=%d_chars tokens prompt=%d completion=%d total=%d tok/s=%.1f",
+				caller,
+				elapsed.Round(time.Millisecond),
+				len(content),
+				cr.Usage.PromptTokens,
+				cr.Usage.CompletionTokens,
+				cr.Usage.TotalTokens,
+				tokensPerSecond,
+			)
+		} else {
+			platform.Logf("[llm:%s] OK %s response=%d_chars tokens prompt=%d completion=%d total=%d",
+				caller,
+				elapsed.Round(time.Millisecond),
+				len(content),
+				cr.Usage.PromptTokens,
+				cr.Usage.CompletionTokens,
+				cr.Usage.TotalTokens,
+			)
+		}
+	} else {
+		platform.Logf("[llm:%s] OK %s response=%d_chars usage=unavailable", caller, elapsed.Round(time.Millisecond), len(content))
+	}
 	return content, nil
 }

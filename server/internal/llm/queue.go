@@ -38,6 +38,17 @@ func NewQueue(cfg *Config, maxActive, maxWait int, timeout time.Duration) *LLMQu
 // Call enqueues an LLM request. Identical concurrent requests (same sfKey)
 // are coalesced via singleflight so the LLM is only called once.
 func (q *LLMQueue) Call(ctx context.Context, sfKey string, messages []ChatMessage, maxTokens int, caller string) (string, error) {
+	return q.CallWithOptions(ctx, sfKey, messages, GenerationOptions{
+		MaxTokens:   maxTokens,
+		Temperature: defaultTemperature,
+		Caller:      caller,
+	})
+}
+
+// CallWithOptions enqueues an LLM request with per-call generation settings.
+// Identical concurrent requests (same sfKey) are coalesced via singleflight
+// so the LLM is only called once.
+func (q *LLMQueue) CallWithOptions(ctx context.Context, sfKey string, messages []ChatMessage, opts GenerationOptions) (string, error) {
 	// Back-pressure: reject immediately if active slots plus queue are full.
 	if q.waiting.Add(1) > int32(cap(q.sem))+q.maxWait {
 		q.waiting.Add(-1)
@@ -60,7 +71,7 @@ func (q *LLMQueue) Call(ctx context.Context, sfKey string, messages []ChatMessag
 		ctx2, cancel := context.WithTimeout(ctx, q.timeout)
 		defer cancel()
 
-		content, err := callLLM(ctx2, q.cfg, messages, maxTokens, caller)
+		content, err := callLLMWithOptions(ctx2, q.cfg, messages, opts)
 		return content, err
 	})
 

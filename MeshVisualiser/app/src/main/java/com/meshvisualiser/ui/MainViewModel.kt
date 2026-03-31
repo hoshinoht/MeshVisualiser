@@ -119,7 +119,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _llmBaseUrl = MutableStateFlow("http://localhost:1234")
     val llmBaseUrl: StateFlow<String> = _llmBaseUrl.asStateFlow()
-    private val _llmModel = MutableStateFlow("default")
+    private val _llmModel = MutableStateFlow("qwen/qwen3.5-9b")
     val llmModel: StateFlow<String> = _llmModel.asStateFlow()
 
     init {
