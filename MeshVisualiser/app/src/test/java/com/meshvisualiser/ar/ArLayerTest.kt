@@ -10,6 +10,14 @@ import com.google.ar.core.Anchor.CloudAnchorState
 
 class ArLayerTest {
 
+    private fun mockPose(x: Float, y: Float, z: Float): Pose {
+        val pose = mockk<Pose>()
+        every { pose.tx() } returns x
+        every { pose.ty() } returns y
+        every { pose.tz() } returns z
+        return pose
+    }
+
     // CloudAnchorManager
 
     private var hostedAnchorId: String? = null
@@ -111,7 +119,7 @@ class ArLayerTest {
     private fun makeSessionManagerWithAnchor(isLeader: Boolean = false): ArSessionManager {
         val manager = makeSessionManager(isLeader)
         val mockAnchor = mockk<Anchor>(relaxed = true)
-        every { mockAnchor.pose } returns Pose.makeTranslation(0f, 0f, 0f)
+        every { mockAnchor.pose } returns mockPose(0f, 0f, 0f)
         manager.onCloudAnchorResolved(mockAnchor)
         return manager
     }
@@ -184,7 +192,7 @@ class ArLayerTest {
         manager.reset()
         // reset clears worldAnchor, so we need to re-resolve it before the second call
         val mockAnchor = mockk<Anchor>(relaxed = true)
-        every { mockAnchor.pose } returns Pose.makeTranslation(0f, 0f, 0f)
+        every { mockAnchor.pose } returns mockPose(0f, 0f, 0f)
         manager.onCloudAnchorResolved(mockAnchor)
         manager.resolveCloudAnchor("anchor-1")
         verify(exactly = 2) { mockCloudAnchorMgr.resolveAnchor("anchor-1") }
@@ -194,7 +202,7 @@ class ArLayerTest {
     fun `onCloudAnchorResolved sets shared anchor, clears peers, resets broadcast`() {
         val manager = makeSessionManager()
         val mockAnchor = mockk<Anchor>(relaxed = true)
-        every { mockAnchor.pose } returns Pose.makeTranslation(1f, 2f, 3f)
+        every { mockAnchor.pose } returns mockPose(1f, 2f, 3f)
         manager.onCloudAnchorResolved(mockAnchor)
         verify { mockPoseManager.setSharedAnchor(mockAnchor) }
         verify { mockNodeManager.clearPeers() }
@@ -205,7 +213,7 @@ class ArLayerTest {
     fun `onCloudAnchorResolved places local node at anchor position`() {
         val manager = makeSessionManager()
         val mockAnchor = mockk<Anchor>(relaxed = true)
-        every { mockAnchor.pose } returns Pose.makeTranslation(1f, 2f, 3f)
+        every { mockAnchor.pose } returns mockPose(1f, 2f, 3f)
         manager.onCloudAnchorResolved(mockAnchor)
         verify { mockNodeManager.placeLocalNode(1f, 2f, 3f, "TestDevice") }
     }
@@ -214,7 +222,7 @@ class ArLayerTest {
     fun `onCloudAnchorResolved updates localWorldPos from anchor pose`() {
         val manager = makeSessionManager()
         val mockAnchor = mockk<Anchor>(relaxed = true)
-        every { mockAnchor.pose } returns Pose.makeTranslation(4f, 5f, 6f)
+        every { mockAnchor.pose } returns mockPose(4f, 5f, 6f)
         manager.onCloudAnchorResolved(mockAnchor)
         val pos = manager.localWorldPos
         assertNotNull(pos)
