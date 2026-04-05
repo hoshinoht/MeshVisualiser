@@ -29,6 +29,35 @@ An Android AR app that creates a peer-to-peer mesh network between nearby device
 
 A ready-to-install debug APK is available in the [`releases/`](releases/) directory. Transfer it to your device and install (enable "Install from unknown sources" if prompted).
 
+## Repository Structure
+
+```
+├── MeshVisualiser/          # Android project root
+│   ├── app/                 # Main app module (Kotlin, Compose, ARCore)
+│   ├── gradle/              # Gradle wrapper
+│   ├── scripts/             # Device helper scripts (install, logcat, devices)
+│   ├── build.gradle.kts     # Project-level build config
+│   └── local.properties     # Local config (API keys, SDK path — not committed)
+├── server/                  # Go backend
+│   ├── cmd/                 # Server entrypoint
+│   ├── internal/            # App logic and platform code
+│   ├── deploy/              # Dockerfile and docker-compose.yml
+│   ├── scripts/             # Server helper scripts
+│   └── .env.example         # Environment variable template
+├── releases/                # Pre-built APKs
+└── .github/workflows/       # CI pipelines
+```
+
+## CI / CD
+
+GitHub Actions runs three workflows on push to `main` and on pull requests:
+
+| Workflow | File | What it does |
+|-|-|-|
+| **Build, Lint & Unit Tests** | `build.yml` | Lints the Android app, builds debug APK, runs unit tests, builds and tests the Go backend |
+| **Instrumented Tests** | `instrumented-tests.yml` | Spins up an Android emulator (API 34) and runs `connectedAndroidTest` |
+| **Release Tag Tests** | `release.yml` | Triggered on `v*` tags — runs lint and unit tests for release validation |
+
 ## Getting Started
 
 ### Prerequisites
