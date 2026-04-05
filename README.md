@@ -25,47 +25,142 @@ An Android AR app that creates a peer-to-peer mesh network between nearby device
 | Build | Gradle 8.10.2, AGP 8.8.0 |
 | SDK | Min 24 / Target 35 |
 
+## Pre-built APK
+
+A ready-to-install debug APK is available in the [`releases/`](releases/) directory. Transfer it to your device and install (enable "Install from unknown sources" if prompted).
+
 ## Getting Started
 
 ### Prerequisites
 
+- Android SDK (or Android Studio) with SDK 35 installed
 - ARCore-compatible physical device (emulators have limited AR support)
 - Google Cloud project with [ARCore API enabled](https://console.cloud.google.com/apis/library/arcorecloudanchor.googleapis.com)
 - Multiple devices for mesh networking (minimum 2)
-- Go 1.25+ for the backend server
+- Go 1.25+ (for running the backend locally) **or** Docker
 
-### Setup
+### Server Setup
 
-```bash
-git clone https://github.com/inf2007/inf2007-team07-2026.git
-cd inf2007-team07-2026/MeshVisualiser
+The Go backend manages cloud anchor storage, leader tracking, network condition simulation, and LLM-powered features (quiz generation, protocol narration).
 
-# Copy and configure local.properties
-cp local.properties.example local.properties
-# Set sdk.dir and ARCORE_CLOUD_ANCHOR_API_KEY
+#### LLM Setup (LM Studio)
 
-# Build
-./gradlew assembleDebug
+The server uses a local LLM for quiz generation and protocol narration. We use [LM Studio](https://lmstudio.ai/) to host the model locally.
 
-# Install on all connected devices
-./scripts/install.sh
-```
+1. Download and install [LM Studio](https://lmstudio.ai/)
+2. In LM Studio, search for and download **`qwen3.5-9b`**
+3. Go to the **Developer** tab and start the local server — it runs on `http://localhost:1234` by default
+4. The server connects to LM Studio automatically (no API key needed)
 
-### Running the Backend
+> If running the Go server inside Docker, LM Studio on the host is reachable via `http://host.docker.internal:1234` (the default in `.env`).
+
+#### Option A: Docker (recommended)
 
 ```bash
 cd server
+
+# Configure environment
+cp .env.example .env
+# Edit .env and set:
+#   MESH_API_KEY    — shared secret for authenticating app requests
+#   LLM_BASE_URL   — OpenAI-compatible LLM endpoint (default: http://host.docker.internal:1234)
+#   LLM_MODEL      — model name (default: qwen3-8b)
+
+# Start the server
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+The server listens on port **8080** by default (override with `HOST_PORT` in `.env`).
+
+To also expose the server via a Cloudflare tunnel:
+
+```bash
+# Set CLOUDFLARE_TUNNEL_TOKEN in .env, then:
+docker compose -f deploy/docker-compose.yml --profile tunnel up -d --build
+```
+
+#### Option B: Run directly with Go
+
+```bash
+cd server
+
+# Set required env var
+export MESH_API_KEY="your-secret-key"
+
 go run .    # Starts on :8080
 ```
+
+#### Server Endpoints
+
+| Method | Path | Description |
+|-|-|-|
+| `GET` | `/health` | Health check |
+| `GET` | `/presets` | List network condition presets |
+| `GET` | `/rooms` | List active rooms |
+| `GET` | `/rooms/{code}` | Get room details |
+| `DELETE` | `/rooms/{code}` | Delete a room |
+| `GET/PUT` | `/rooms/{code}/anchor` | Cloud Anchor ID for a room |
+| `GET/PUT` | `/rooms/{code}/leader` | Leader ID for a room |
+| `GET/PUT` | `/rooms/{code}/conditions` | Network condition simulation |
+
+### App Setup
+
+1. **Clone and configure**
+
+   ```bash
+   git clone https://github.com/inf2007/inf2007-team07-2026.git
+   cd inf2007-team07-2026/MeshVisualiser
+
+   cp local.properties.example local.properties
+   ```
+
+2. **Edit `local.properties`** with your values:
+
+   ```properties
+   # Android SDK path (auto-set by Android Studio)
+   sdk.dir=/path/to/your/Android/sdk
+
+   # ARCore Cloud Anchor API key (from Google Cloud Console → Credentials)
+   ARCORE_CLOUD_ANCHOR_API_KEY=your_api_key_here
+
+   # Must match the MESH_API_KEY set on the server
+   MESH_SERVER_API_KEY=your_api_key_here
+   ```
+
+   To get an ARCore API key:
+   1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+   2. Create or select a project
+   3. Enable the **ARCore API** under APIs & Services
+   4. Create an API key under Credentials
+   5. (Recommended) Restrict the key to the ARCore API only
+
+3. **Build and install**
+
+   ```bash
+   ./gradlew assembleDebug
+   ./scripts/install.sh          # Installs on all connected ADB devices
+   ```
+
+   Or open the project in Android Studio (`MeshVisualiser/` directory) and run from there.
 
 ### Build Commands
 
 ```bash
 cd MeshVisualiser
 ./gradlew assembleDebug          # Debug APK
+./gradlew assembleRelease        # Release APK (requires signing config)
 ./gradlew test                   # Unit tests
 ./gradlew connectedAndroidTest   # Instrumented tests (requires device)
 ./gradlew lint                   # Lint checks
+```
+
+### Helper Scripts
+
+```bash
+cd MeshVisualiser
+./scripts/install.sh             # Build + install APK on all connected devices
+./scripts/logcat.sh              # Stream logcat from all devices (colored)
+./scripts/devices.sh             # List connected devices with model info
 ```
 
 ## Architecture
