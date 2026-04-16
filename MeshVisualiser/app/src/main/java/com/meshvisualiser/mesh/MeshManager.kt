@@ -1,0 +1,310 @@
+package com.meshvisualiser.mesh
+
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import com.meshvisualiser.MeshVisualizerApp
+import com.meshvisualiser.models.MeshMessage
+import com.meshvisualiser.models.MeshState
+import com.meshvisualiser.models.MessageType
+import com.meshvisualiser.models.PoseData
+import com.meshvisualiser.network.NearbyConnectionsManager
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * Implements the Bully Algorithm for leader election in the mesh network.
+ *
+ * Election Rules:
+ * 1. Any node can start an election by sending ELECTION to all higher-ID nodes
+ * 2. If a node receives ELECTION from a lower-ID node, it replies OK and starts its own election
+ * 3. If no OK is received within timeout, the node becomes the leader
+ * 4. The leader broadcasts COORDINATOR to all peers
+ */
+class MeshManager(
+    private val localId: Long,
+    private val nearbyManager: NearbyConnectionsManager,
+    private val onBecomeLeader: () -> Unit,
+    private val onNewLeader: (leaderId: Long) -> Unit,
+    private val onPoseUpdate: (peerId: Long, poseData: PoseData) -> Unit,
+    private val onNarratorEvent: ((Any) -> Unit)? = null
+) {
+    companion object {
+        private const val TAG = "MeshManager"
+    }
+
+    /** Typed election event for visualization on the mesh graph. */
+    data class ElectionEvent(
+        val type: ElectionEventType,
+        val fromId: Long,
+        val toId: Long,
+        val term: Int,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    enum class ElectionEventType { ELECTION_SENT, OK_RECEIVED, COORDINATOR_BROADCAST }
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val _meshState = MutableStateFlow(MeshState.DISCOVERING)
+    val meshState: StateFlow<MeshState> = _meshState.asStateFlow()
+
+    private val _currentLeaderId = MutableStateFlow(-1L)
+    val currentLeaderId: StateFlow<Long> = _currentLeaderId.asStateFlow()
+
+    private val _currentTerm = MutableStateFlow(0)
+    val currentTerm: StateFlow<Int> = _currentTerm.asStateFlow()
+
+    private val _electionEvents = MutableSharedFlow<ElectionEvent>(extraBufferCapacity = 20)
+    val electionEvents: SharedFlow<ElectionEvent> = _electionEvents.asSharedFlow()
+
+    private var isWaitingForOk = false
+    private var electionTimeoutRunnable: Runnable? = null
+    private var coordinatorTimeoutRunnable: Runnable? = null
+    private var meshFormationTimeoutRunnable: Runnable? = null
+
+    val isLeader: Boolean
+        get() = _currentLeaderId.value == localId
+
+    /** Handle incoming messages from peers. */
+    fun onMessageReceived(endpointId: String, message: MeshMessage) {
+        val senderId = message.senderId
+
+        when (message.getMessageType()) {
+            MessageType.HANDSHAKE -> handleHandshake(endpointId, senderId)
+            MessageType.ELECTION -> handleElectionMessage(endpointId, senderId)
+            MessageType.OK -> handleOkMessage(senderId)
+            MessageType.COORDINATOR -> handleCoordinatorMessage(senderId, endpointId, message.data)
+            MessageType.POSE_UPDATE -> handlePoseUpdate(senderId, message)
+            else -> { /* Ignore */ }
+        }
+    }
+
+    /**
+     * Handle handshake from a peer. If we're the leader, re-send COORDINATOR
+     * so late joiners know who the leader is.
+     */
+    private fun handleHandshake(endpointId: String, senderId: Long) {
+        if (isLeader) {
+            Log.d(TAG, "Re-sending COORDINATOR to late joiner $senderId ($endpointId) (term=${_currentTerm.value})")
+            nearbyManager.sendMessage(endpointId, MeshMessage.coordinator(localId, "${_currentTerm.value}|"))
+        }
+    }
+
+    /** Start discovery and advertising only — no election timeout. */
+    fun startDiscovery() {
+        _meshState.value = MeshState.DISCOVERING
+        nearbyManager.startDiscoveryAndAdvertising()
+    }
+
+    /** Start mesh formation - begin discovering and wait for peers, then auto-elect. */
+    fun startMeshFormation() {
+        startDiscovery()
+
+        meshFormationTimeoutRunnable = Runnable {
+            if (_meshState.value == MeshState.DISCOVERING) {
+                val validPeers = nearbyManager.getValidPeers()
+                if (validPeers.isNotEmpty()) {
+                    Log.d(TAG, "Mesh formation timeout - ${validPeers.size} peer(s) found, starting election")
+                    startElection()
+                } else {
+                    Log.d(TAG, "Mesh formation timeout - no peers yet, extending discovery")
+                    handler.postDelayed(meshFormationTimeoutRunnable!!, MeshVisualizerApp.MESH_FORMATION_TIMEOUT_MS)
+                }
+            }
+        }
+        handler.postDelayed(meshFormationTimeoutRunnable!!, MeshVisualizerApp.MESH_FORMATION_TIMEOUT_MS)
+    }
+
+    /**
+     * Late-join mode: wait for COORDINATOR from the existing leader instead of
+     * immediately starting an election.  This prevents a rejoining node from
+     * crowning itself leader before it has connected to all peers.
+     *
+     * If no COORDINATOR arrives within the timeout, fall back to a normal election.
+     */
+    fun waitForCoordinator() {
+        Log.d(TAG, "Late join — waiting for COORDINATOR from existing leader (timeout=${MeshVisualizerApp.ELECTION_TIMEOUT_MS * 3}ms)")
+        _meshState.value = MeshState.ELECTING
+
+        coordinatorTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        coordinatorTimeoutRunnable = Runnable {
+            if (_currentLeaderId.value == -1L || _meshState.value == MeshState.ELECTING) {
+                Log.d(TAG, "No COORDINATOR received after late join — starting election")
+                startElection()
+            }
+        }
+        handler.postDelayed(coordinatorTimeoutRunnable!!, MeshVisualizerApp.ELECTION_TIMEOUT_MS * 3)
+    }
+
+    /** Start the Bully Algorithm election. */
+    fun startElection() {
+        val nextTerm = _currentTerm.value + 1
+        _currentTerm.value = nextTerm
+        Log.d(TAG, "Starting election term=$nextTerm (localId: $localId)")
+        _meshState.value = MeshState.ELECTING
+        isWaitingForOk = true
+
+        meshFormationTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        electionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
+        val validPeers = nearbyManager.getValidPeers()
+        val higherPeers = validPeers.filter { it.value.peerId > localId }
+
+        if (higherPeers.isEmpty()) {
+            Log.d(TAG, "No higher peers found, becoming leader (term=$nextTerm)")
+            becomeLeader()
+        } else {
+            Log.d(TAG, "Sending ELECTION to ${higherPeers.size} higher peers (term=$nextTerm)")
+            higherPeers.forEach { (endpointId, peer) ->
+                nearbyManager.sendMessage(endpointId, MeshMessage.election(localId))
+                _electionEvents.tryEmit(ElectionEvent(ElectionEventType.ELECTION_SENT, localId, peer.peerId, nextTerm))
+            }
+
+            electionTimeoutRunnable = Runnable {
+                if (isWaitingForOk) {
+                    Log.d(TAG, "Election timeout - no OK received, becoming leader (term=$nextTerm)")
+                    becomeLeader()
+                }
+            }
+            handler.postDelayed(electionTimeoutRunnable!!, MeshVisualizerApp.ELECTION_TIMEOUT_MS)
+        }
+    }
+
+    private fun handleElectionMessage(endpointId: String, senderId: Long) {
+        Log.d(TAG, "Received ELECTION from $senderId (term=${_currentTerm.value})")
+        _electionEvents.tryEmit(ElectionEvent(ElectionEventType.ELECTION_SENT, senderId, localId, _currentTerm.value))
+
+        if (senderId < localId) {
+            Log.d(TAG, "Sender $senderId < localId $localId, replying OK")
+            nearbyManager.sendMessage(endpointId, MeshMessage.ok(localId))
+            _electionEvents.tryEmit(ElectionEvent(ElectionEventType.OK_RECEIVED, localId, senderId, _currentTerm.value))
+            // If we are already the leader, respond with COORDINATOR instead of restarting election
+            if (isLeader) {
+                Log.d(TAG, "Already leader — sending COORDINATOR instead of restarting election")
+                nearbyManager.sendMessage(endpointId, MeshMessage.coordinator(localId, "${_currentTerm.value}|"))
+            } else {
+                startElection()
+            }
+        }
+    }
+
+    private fun handleOkMessage(senderId: Long) {
+        Log.d(TAG, "Received OK from $senderId (term=${_currentTerm.value})")
+        _electionEvents.tryEmit(ElectionEvent(ElectionEventType.OK_RECEIVED, senderId, localId, _currentTerm.value))
+        isWaitingForOk = false
+        electionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
+        // NET-M1: Post a secondary timeout — if no COORDINATOR arrives, restart the election
+        coordinatorTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        coordinatorTimeoutRunnable = Runnable {
+            if (_currentLeaderId.value == -1L || _meshState.value == MeshState.ELECTING) {
+                Log.d(TAG, "COORDINATOR timeout — no COORDINATOR received after OK, restarting election")
+                onNarratorEvent?.invoke("coordinator_timeout")
+                startElection()
+            }
+        }
+        handler.postDelayed(coordinatorTimeoutRunnable!!, MeshVisualizerApp.ELECTION_TIMEOUT_MS * 2)
+    }
+
+    private fun handleCoordinatorMessage(senderId: Long, endpointId: String, messageData: String) {
+        // Parse term from message data: "term|cloudAnchorId" or legacy ""
+        val parts = messageData.split("|", limit = 2)
+        val incomingTerm = parts.getOrNull(0)?.toIntOrNull() ?: _currentTerm.value
+        val cloudAnchorId = parts.getOrNull(1) ?: messageData
+
+        Log.d(TAG, "Received COORDINATOR from $senderId (term=$incomingTerm, local_term=${_currentTerm.value})")
+
+        // NET-C2: Validate Bully Algorithm invariant — COORDINATOR must come from a peer
+        // with ID >= localId, or a known peer (prevents spoofed coordinator claims)
+        val knownPeerIds = nearbyManager.getValidPeers().values.map { it.peerId }.toSet()
+        if (senderId < localId && senderId !in knownPeerIds) {
+            Log.w(TAG, "Ignoring COORDINATOR from $senderId — lower than localId $localId and not a known peer")
+            return
+        }
+
+        // Bully+Term: accept only if incoming term >= our current term
+        // (prevents stale COORDINATOR from an old election overriding a newer one)
+        if (incomingTerm < _currentTerm.value) {
+            Log.w(TAG, "Ignoring stale COORDINATOR from $senderId (term=$incomingTerm < current=${_currentTerm.value})")
+            onNarratorEvent?.invoke(Triple("stale_coordinator", senderId, incomingTerm to _currentTerm.value))
+            // If we're the actual leader, correct the sender so it stops claiming leadership
+            if (isLeader) {
+                Log.d(TAG, "Replying with authoritative COORDINATOR (term=${_currentTerm.value}) to correct stale sender $senderId")
+                nearbyManager.sendMessage(endpointId, MeshMessage.coordinator(localId, "${_currentTerm.value}|"))
+            }
+            return
+        }
+
+        _currentTerm.value = incomingTerm
+        _currentLeaderId.value = senderId
+        isWaitingForOk = false
+        electionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        coordinatorTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        _meshState.value = MeshState.CONNECTED
+        _electionEvents.tryEmit(ElectionEvent(ElectionEventType.COORDINATOR_BROADCAST, senderId, localId, incomingTerm))
+        onNewLeader(senderId)
+    }
+
+    private fun handlePoseUpdate(senderId: Long, message: MeshMessage) {
+        message.parsePoseData()?.let { poseData ->
+            // Update peer pose through NearbyConnectionsManager's StateFlow using copy()
+            nearbyManager.updatePeerPose(senderId, poseData.x, poseData.y, poseData.z)
+
+            onPoseUpdate(senderId, poseData)
+
+            // If we're the leader, relay this pose to all OTHER peers
+            if (isLeader) {
+                val validPeers = nearbyManager.getValidPeers()
+                validPeers.entries
+                    .filter { it.value.peerId != senderId }  // don't echo back to sender
+                    .forEach { (endpointId, _) ->
+                        nearbyManager.sendMessage(endpointId, message)
+                    }
+            }
+        }
+    }
+
+    private fun becomeLeader() {
+        val term = _currentTerm.value
+        Log.d(TAG, "Becoming leader (term=$term)")
+        _currentLeaderId.value = localId
+        isWaitingForOk = false
+        _meshState.value = MeshState.CONNECTED
+        onBecomeLeader()
+        // Announce to all peers with current term
+        nearbyManager.broadcastMessage(MeshMessage.coordinator(localId, "$term|"))
+        // Emit events for visualization
+        nearbyManager.getValidPeers().values.forEach { peer ->
+            _electionEvents.tryEmit(ElectionEvent(ElectionEventType.COORDINATOR_BROADCAST, localId, peer.peerId, term))
+        }
+    }
+
+    /** Broadcast pose update to all peers. */
+    fun broadcastPose(x: Float, y: Float, z: Float, qx: Float, qy: Float, qz: Float, qw: Float) {
+        nearbyManager.broadcastMessage(MeshMessage.poseUpdate(localId, x, y, z, qx, qy, qz, qw))
+    }
+
+    /**
+     * Called when a peer disconnects from the mesh.
+     * If the departed peer was the leader, reset leader state and trigger re-election.
+     */
+    fun onPeerDisconnected(peerId: Long) {
+        if (peerId == _currentLeaderId.value) {
+            Log.d(TAG, "Leader $peerId disconnected — triggering re-election")
+            _currentLeaderId.value = -1L
+            startElection()
+        }
+    }
+
+    /** Cleanup resources. */
+    fun cleanup() {
+        electionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        coordinatorTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        meshFormationTimeoutRunnable?.let { handler.removeCallbacks(it) }
+    }
+}

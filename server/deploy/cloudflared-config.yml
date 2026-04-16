@@ -1,0 +1,5 @@
+tunnel: mesh-server
+ingress:
+  - hostname: mesh.hoshinoht.dev
+    service: http://mesh-server:8080
+  - service: http_status:404

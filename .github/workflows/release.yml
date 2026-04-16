@@ -1,0 +1,44 @@
+name: Release Tag Tests
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: MeshVisualiser
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ARCORE_CLOUD_ANCHOR_API_KEY=" >> local.properties
+          echo "MESH_SERVER_API_KEY=" >> local.properties
+
+      - name: Run lint
+        run: ./gradlew lint
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-test-reports
+          path: MeshVisualiser/app/build/reports/tests/

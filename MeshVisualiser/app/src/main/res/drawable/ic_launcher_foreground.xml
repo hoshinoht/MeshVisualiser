@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Mesh edges: outer square connecting follower nodes -->
+    <path
+        android:pathData="M35,35L73,35L73,71L35,71Z"
+        android:strokeWidth="2"
+        android:strokeColor="#6663D4FF"/>
+
+    <!-- Mesh edges: leader hub to each follower -->
+    <path
+        android:pathData="M54,53L35,35 M54,53L73,35 M54,53L35,71 M54,53L73,71"
+        android:strokeWidth="2.5"
+        android:strokeColor="#9963D4FF"/>
+
+    <!-- Follower nodes (teal) -->
+    <path
+        android:fillColor="#4CD9DF"
+        android:pathData="M35,35m-5,0a5,5 0 1,1 10,0a5,5 0 1,1 -10,0
+                          M73,35m-5,0a5,5 0 1,1 10,0a5,5 0 1,1 -10,0
+                          M35,71m-5,0a5,5 0 1,1 10,0a5,5 0 1,1 -10,0
+                          M73,71m-5,0a5,5 0 1,1 10,0a5,5 0 1,1 -10,0"/>
+
+    <!-- Leader glow ring -->
+    <path
+        android:pathData="M54,53m-12,0a12,12 0 1,1 24,0a12,12 0 1,1 -24,0"
+        android:strokeWidth="1.5"
+        android:strokeColor="#4063D4FF"/>
+
+    <!-- Leader node (bright cyan) -->
+    <path
+        android:fillColor="#63D4FF"
+        android:pathData="M54,53m-7,0a7,7 0 1,1 14,0a7,7 0 1,1 -14,0"/>
+
+</vector>
