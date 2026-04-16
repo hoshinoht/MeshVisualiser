@@ -1,6 +1,6 @@
 # MeshVisualiser
 
-An Android AR app that creates a peer-to-peer mesh network between nearby devices and visualizes the topology in augmented reality. Built as an educational tool for learning networking concepts like mesh topologies, leader election, vector clocks, CSMA/CD, TCP/UDP, and more.
+MeshVisualiser is an Android application for visualizing peer-to-peer mesh networks in augmented reality. It combines Google Nearby Connections, ARCore Cloud Anchors, vector clocks, and protocol simulations to make network behavior and distributed state observable across multiple devices.
 
 ## Features
 
@@ -8,8 +8,8 @@ An Android AR app that creates a peer-to-peer mesh network between nearby device
 - **AR Visualization** — connected devices rendered as nodes with mesh links, shared coordinate system via ARCore Cloud Anchors, animated packet movement along edges
 - **Vector Clocks** — Lamport-style vector clock tracking with causality arrows, concurrent event badges, and a clock inspector overlay
 - **CSMA/CD Simulation** — interactive protocol simulation with collision detection, jam signals, and exponential backoff
-- **AI-Powered Quiz** — LLM-generated questions from live mesh state with a 50-question static fallback pool
-- **Protocol Narrator** — contextual explanations of networking events as they happen in the mesh
+- **AI-Assisted Quiz Mode** — LLM-generated questions from live mesh state with a 50-question static fallback pool
+- **Protocol Narration** — contextual explanations of networking events as they happen in the mesh
 - **TCP/UDP Modes** — visualize acknowledgements, retransmissions, and packet loss across transmission modes
 - **Network Condition Simulation** — server-side presets (WiFi, 4G, 3G, satellite, congested) controlling latency, jitter, and packet loss
 
@@ -45,7 +45,7 @@ An Android AR app that creates a peer-to-peer mesh network between nearby device
 
 ## CI / CD
 
-GitHub Actions runs three workflows on push to `main` and on pull requests:
+The repository includes three GitHub Actions workflows for build validation, instrumented testing, and release checks:
 
 | Workflow | File | What it does |
 |-|-|-|
@@ -132,8 +132,8 @@ go run .    # Starts on :8080
 1. **Clone and configure**
 
    ```bash
-   git clone https://github.com/inf2007/inf2007-team07-2026.git
-   cd inf2007-team07-2026/MeshVisualiser
+   git clone https://github.com/hoshinoht/MeshVisualiser.git
+   cd MeshVisualiser/MeshVisualiser
 
    cp local.properties.example local.properties
    ```
@@ -207,7 +207,3 @@ Key packages under `com.meshvisualiser`:
 | `quiz/` | Dynamic + static quiz engine |
 | `simulation/` | CSMA/CD protocol simulator |
 | `ui/` | Screens, components, delegates, Material 3 Expressive theme |
-
-## Team
-
-**INF2007 Team 07** — Singapore Institute of Technology, 2026
